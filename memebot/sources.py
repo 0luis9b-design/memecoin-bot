@@ -18,7 +18,7 @@ SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "memecoin-paper-bot/1.0", "Accept": "application/json"})
 
 LIMITS = {  # Abrufe pro Minute (mit Sicherheitsabstand zur offiziellen Grenze)
-    "geckoterminal": 12,   # offiziell 30, auf Railway-IPs gab es aber schon bei ~15 Abrufe 429
+    "geckoterminal": 8,    # offiziell 30, auf Railway-IPs gab es aber schon ab ~10 Abrufen/min 429
     "dexscreener": 240,
     "rugcheck": config.RUGCHECK_PER_MIN,
     "solana": 90,

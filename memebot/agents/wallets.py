@@ -31,7 +31,7 @@ class Scout:
                         (now, now - 900, max_pools))
         n = 0
         for r in rows:
-            if available("geckoterminal") < 4:   # Platz für Scanner und Charts lassen
+            if available("geckoterminal") < 3:   # Platz für Scanner und Charts lassen
                 break
             try:
                 trades = market.pool_trades(r["pool"])

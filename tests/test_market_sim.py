@@ -67,3 +67,18 @@ def test_max_usd_for_impact_matches_impact():
     usd = sim.max_usd_for_impact(2.5, 10000)
     assert sim.impact_pct(usd, 10000) == pytest.approx(2.5, rel=1e-6)
     assert config.FEE_PCT == 1.0
+
+
+def test_rugcheck_uses_our_pool_and_ignores_low_liquidity_flag():
+    r = fixture("rugcheck_report.json")
+    r["markets"] = [
+        {"pubkey": "DUST", "marketType": "raydium", "lp": {"lpLockedPct": 0, "lpLockedUSD": 1, "quoteUSD": 0.5}},
+        {"pubkey": "OURS", "marketType": "pump_fun_amm", "lp": {"lpLockedPct": 100, "lpLockedUSD": 9000, "quoteUSD": 4000}},
+        {"pubkey": "CURVE", "marketType": "meteora_dbc", "lp": {"lpLockedPct": 0, "lpLockedUSD": 5000}},
+    ]
+    r["risks"] = [{"name": "Low Liquidity", "level": "danger"}, {"name": "Single holder ownership", "level": "danger"}]
+    p = market.parse_rugcheck(r, ("OURS",))
+    assert p["lp_locked_pct"] == 100
+    assert [x["name"] for x in p["risks"]] == ["Single holder ownership"]
+    p2 = market.parse_rugcheck(r, ("UNKNOWN",))     # eigener Pool fehlt: Staub-Pools und Kurven zählen nicht
+    assert p2["lp_locked_pct"] == 100

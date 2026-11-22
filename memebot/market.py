@@ -188,10 +188,16 @@ def parse_rugcheck(r, pools=()):
     insiders = sum(1 for h in holders if h.get("insider"))
     supply = f((r.get("token") or {}).get("supply"))
     creator_pct = (f(r.get("creatorBalance")) / supply * 100) if supply else 0.0
-    lp_locked = [f((m.get("lp") or {}).get("lpLockedPct")) for m in r.get("markets") or []
-                 if (m.get("marketType") or "") not in ("pump_fun",)]
+    # Liquiditäts-Sperre: zählt der Pool, in dem wir handeln. Bonding-Kurven haben keine LP-Token,
+    # und Staub-Pools (< 100 $) von Trittbrettfahrern sagen nichts über den Coin.
+    markets = r.get("markets") or []
+    ours = [m for m in markets if m.get("pubkey") in set(pools)]
+    if not ours:
+        ours = [m for m in markets if f((m.get("lp") or {}).get("lpLockedUSD")) + f((m.get("lp") or {}).get("quoteUSD")) >= 100]
+    lp_locked = [f((m.get("lp") or {}).get("lpLockedPct")) for m in ours if not is_curve(m.get("marketType"))]
+    # „Low Liquidity“ prüft der Bot selbst mit DexScreener-Daten (RugCheck sieht bei frischen Pools oft nur Staub-Pools)
     risks = [{"name": x.get("name"), "level": x.get("level"), "text": x.get("description") or x.get("value") or ""}
-             for x in r.get("risks") or []]
+             for x in r.get("risks") or [] if (x.get("name") or "") != "Low Liquidity"]
     return {
         "mint_auth": bool(r.get("mintAuthority")), "freeze_auth": bool(r.get("freezeAuthority")),
         "transfer_fee": f((r.get("transferFee") or {}).get("pct")), "rugged": bool(r.get("rugged")),
@@ -201,6 +207,12 @@ def parse_rugcheck(r, pools=()):
         "score_norm": f(r.get("score_normalised"), 0), "risks": risks,
         "launchpad": ((r.get("launchpad") or {}).get("name") or ""),
     }
+
+
+def is_curve(market_type):
+    """Bonding-Kurve (Pump.fun, Meteora DBC, Raydium LaunchLab …) statt normalem Pool?"""
+    t = (market_type or "").lower()
+    return t == "pump_fun" or any(k in t for k in ("dbc", "launchlab", "launchpad", "curve", "moonshot", "boop"))
 
 
 def rugcheck(mint, pools=()):
