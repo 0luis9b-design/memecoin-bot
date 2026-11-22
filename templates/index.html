@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07090b">
+<title>Memecoin-Bot · Spielgeld</title>
+<link rel="icon" href="/static/icon.svg">
+<link rel="stylesheet" href="/static/app.css?v={{ version }}">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <div class="logo">🐸</div>
+    <div>
+      <div class="title">MEMECOIN BOT <span class="badge">Spielgeld</span></div>
+      <div class="sub"><span id="live" class="dot"></span> <span id="status">verbinde …</span></div>
+    </div>
+  </div>
+  <nav id="tabs">
+    <button data-tab="overview" class="on">Übersicht</button>
+    <button data-tab="trades">Trades</button>
+    <button data-tab="log">Log</button>
+    <button data-tab="wallets">Wallets</button>
+    <button data-tab="learning">Lernen <span id="propBadge" class="pill hide"></span></button>
+    <button data-tab="system">System</button>
+  </nav>
+</header>
+<div id="ticker" class="ticker"><div class="track"></div></div>
+
+<main>
+<section id="tab-overview" class="tab on">
+  <div id="accCards" class="grid2"></div>
+  <div class="card">
+    <div class="row between"><h2>Kontostand</h2>
+      <div class="seg" id="eqRange"><button data-h="1">1H</button><button data-h="4">4H</button><button data-h="24">1D</button><button data-h="168" class="on">1W</button><button data-h="1440">ALL</button></div>
+    </div>
+    <canvas id="eqChart" height="220" style="height:220px"></canvas>
+    <label class="small"><input type="checkbox" id="eqTests"> Testkonten einblenden</label>
+  </div>
+  <div class="card">
+    <div class="row between"><h2>Agenten-Pipeline</h2><span class="small muted">scanner → rug check → analyst → sizer → executor → risk → logger · scout → copy-feed · lernen</span></div>
+    <div id="pipeline" class="pipeline"></div>
+    <div id="skips" class="small muted"></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><h2>Offene Positionen</h2><div id="openPos"></div></div>
+    <div class="card"><h2>Warum · letzter Trade</h2><div id="why"></div></div>
+  </div>
+  <div class="card"><h2>Aktivität</h2><div id="activity"></div></div>
+</section>
+
+<section id="tab-trades" class="tab">
+  <div class="card">
+    <div class="row wrap gap">
+      <select id="trAcc"></select>
+      <select id="trStatus"><option value="">alle</option><option value="open">offen</option><option value="closed">geschlossen</option><option value="cancelled">verworfen</option></select>
+      <span id="trSum" class="small muted"></span>
+    </div>
+    <div id="trades"></div>
+  </div>
+</section>
+
+<section id="tab-log" class="tab">
+  <div class="card">
+    <div class="row wrap gap">
+      <select id="lgAgent"><option value="">alle Agenten</option><option>scanner</option><option>rugcheck</option><option>analyst</option><option>sizer</option><option>executor</option><option>risk</option><option>scout</option><option>copyfeed</option><option>learning</option><option>system</option></select>
+      <select id="lgAction"><option value="">alle Aktionen</option><option>ENTER</option><option>EXIT</option><option>PARTIAL</option><option>ORDER</option><option>CANCEL</option><option>SKIP</option><option>BLOCK</option><option>WALLET</option><option>PROPOSAL</option><option>MUTATE</option><option>APPLY</option></select>
+      <input id="lgQ" placeholder="Coin oder Text suchen">
+    </div>
+    <pre id="logBox" class="log"></pre>
+  </div>
+</section>
+
+<section id="tab-wallets" class="tab">
+  <div class="card"><h2>Smart Wallets</h2><div id="walletInfo" class="small muted"></div><div id="wallets"></div></div>
+  <div class="card"><h2>Copy-Feed · zuletzt gesehen</h2><div id="copyFeed"></div></div>
+</section>
+
+<section id="tab-learning" class="tab">
+  <div class="card"><h2>Vorschläge zur Freigabe</h2><div id="proposals"></div></div>
+  <div class="card"><h2>Haupt- und Testkonten</h2><div class="small muted" id="learnInfo"></div><div id="variants"></div></div>
+</section>
+
+<section id="tab-system" class="tab">
+  <div class="card"><h2>Datenquellen</h2><div id="srcs"></div></div>
+  <div class="card"><h2>Simulation & Zustand</h2><div id="sysInfo"></div></div>
+  <div class="card"><h2>Ereignisse</h2><div id="events"></div></div>
+</section>
+</main>
+
+<div id="modal" class="modal hide"><div class="sheet"><button class="close" id="modalClose">×</button><div id="modalBody"></div></div></div>
+<footer class="small muted">Nur Spielgeld · keine Wallet · keine Finanzberatung · v{{ version }}</footer>
+<script src="/static/app.js?v={{ version }}"></script>
+</body>
+</html>
