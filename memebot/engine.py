@@ -37,6 +37,7 @@ class Engine:
         self.learner = Learner(store, self.trader)
         self.due = {}
         self.skips = Counter()          # Gründe, warum Coins nicht gekauft wurden (für die Pipeline-Anzeige)
+        self.block_reasons = Counter()  # welche Rug-Check-Regel fällt wie oft durch (je Coin und 10 min einmal)
         self.analyst = {"bewertet": 0, "bestanden": 0, "letzte": None}
         self.last_logged = {}           # mint -> Zeit (Analyst-Log höchstens alle 10 min je Coin)
         self.state = {"cycles": 0, "last_cycle": None, "last_error": "", "started": time.time()}
@@ -133,6 +134,7 @@ class Engine:
             failed = [n for n, ok, _ in checks if not ok]
             if failed:
                 if log_now and a["kind"] == "main":
+                    self.block_reasons.update(failed)
                     self.s.decide("rugcheck", "BLOCK", f"{a['name']}: durchgefallen – {', '.join(failed)}", a["id"], mint, d["symbol"],
                                   {"checks": checks})
                     self.skips["Rug-Check"] += 1
@@ -245,6 +247,7 @@ class Engine:
             "bewertet": self.analyst["bewertet"], "orders": self.trader.stats["orders"],
             "offen": len(self.trader.open_positions()), "rug_blockiert": self.rug.stats["blockiert"],
             "wallets_beobachtet": self.scout.stats["beobachtet"], "copy_abfragen": self.copy.stats["abgefragt"],
+            "rug_gruende": dict(self.block_reasons.most_common(6)), "ausschluss": dict(self.skips.most_common(6)),
             "quellen": {k: f"{v['ok']} ok / {v['fehler']} Fehler" + (f" ({v['letzter_fehler']})" if v["fehler"] else "")
                         for k, v in STATS.items()},
         }

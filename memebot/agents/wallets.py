@@ -23,7 +23,7 @@ class Scout:
         self.s = store
         self.stats = {"coins_gesammelt": 0, "trades": 0, "wallets_bewertet": 0, "beobachtet": 0, "fehler": ""}
 
-    def harvest(self, max_pools=6):
+    def harvest(self, max_pools=3):
         """Trades frischer, aktiver Coins einsammeln (alle 15 min erneut, solange der Coin jung ist)."""
         now = time.time()
         rows = self.s.q("""SELECT mint, pool FROM tokens WHERE status='watch' AND (? - COALESCE(created_at, first_seen)) BETWEEN 180 AND 7200
@@ -31,7 +31,7 @@ class Scout:
                         (now, now - 900, max_pools))
         n = 0
         for r in rows:
-            if available("geckoterminal") < 6:   # Platz für Scanner und Charts lassen
+            if available("geckoterminal") < 4:   # Platz für Scanner und Charts lassen
                 break
             try:
                 trades = market.pool_trades(r["pool"])
