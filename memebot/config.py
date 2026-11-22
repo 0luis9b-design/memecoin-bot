@@ -33,7 +33,8 @@ START_BALANCE = _f("START_BALANCE", 1000)       # $ Spielgeld je Konto (Hauptkon
 # --- Takt (Sekunden) ---
 TICK_SEC = _f("TICK_SEC", 5)                    # Grundtakt der Schleife
 SCAN_SEC = _f("SCAN_SEC", 60)                   # neue Pools suchen
-REFRESH_HOT_SEC = _f("REFRESH_HOT_SEC", 20)     # Kurse für offene Positionen und heiße Coins
+REFRESH_OPEN_SEC = _f("REFRESH_OPEN_SEC", 5)    # Kurse für offene Positionen und Orders (schnelle Spur)
+REFRESH_HOT_SEC = _f("REFRESH_HOT_SEC", 20)     # Kurse für heiße Coins
 REFRESH_ALL_SEC = _f("REFRESH_ALL_SEC", 120)    # Kurse für die übrige Beobachtungsliste
 HARVEST_SEC = _f("HARVEST_SEC", 60)             # Trades frischer Coins einsammeln (Wallet-Suche)
 WALLET_SCORE_SEC = _f("WALLET_SCORE_SEC", 600)  # Smart Wallets neu bewerten
@@ -58,6 +59,19 @@ EXTRA_SLIP_PCT = _f("EXTRA_SLIP_PCT", 0.5)      # Zuschlag für Sandwich-Bots un
 FILL_DELAY_SEC = _f("FILL_DELAY_SEC", 15)       # Order wird frühestens so spät mit dem dann gültigen Kurs ausgeführt
 MISSING_RUG_MIN = _f("MISSING_RUG_MIN", 15)     # Pool so lange verschwunden -> Position gilt als wertlos
 SOL_FALLBACK_USD = _f("SOL_FALLBACK_USD", 140)
+
+# --- Launch-Feed (PumpPortal, kostenlos: neue Coins + Migrationen) ---
+PUMPPORTAL_ENABLED = _b("PUMPPORTAL_ENABLED", True)
+LAUNCH_CHECK_MIN_SEC = _f("LAUNCH_CHECK_MIN_SEC", 120)   # frühestens so spät prüfen, ob der Coin lebt
+LAUNCH_CHECK_MAX_MIN = _f("LAUNCH_CHECK_MAX_MIN", 15)    # danach gilt ein ruhiger Coin als verworfen
+LAUNCH_MIN_VOL_M5 = _f("LAUNCH_MIN_VOL_M5", 1500)
+LAUNCH_MIN_BUYS_M5 = _i("LAUNCH_MIN_BUYS_M5", 20)
+LAUNCH_MIN_MCAP = _f("LAUNCH_MIN_MCAP", 12000)
+
+# --- Schatten-Auswertung ---
+SHADOW_H = _f("SHADOW_H", 2)                    # so lange werden abgelehnte Coins weiterverfolgt
+SHADOW_MIN_N = _i("SHADOW_MIN_N", 30)           # ab so vielen ausgewerteten Coins gibt es eine Einschätzung
+WEIGHT_MIN_SAMPLES = _i("WEIGHT_MIN_SAMPLES", 100)   # ab so vielen Beispielen lernt der Analyst neue Gewichte
 
 # --- Quellen ---
 SOLANA_RPC_URL = os.environ.get("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com").strip()

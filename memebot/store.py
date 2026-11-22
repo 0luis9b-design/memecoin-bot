@@ -43,6 +43,17 @@ CREATE TABLE IF NOT EXISTS proposals (
   id INTEGER PRIMARY KEY, ts REAL, account_id INTEGER, variant_id INTEGER, changes TEXT, stats TEXT,
   status TEXT DEFAULT 'offen', decided REAL);
 CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, ts REAL, level TEXT, title TEXT, body TEXT);
+CREATE TABLE IF NOT EXISTS launches (
+  mint TEXT PRIMARY KEY, curve TEXT, creator TEXT, ts REAL, symbol TEXT, name TEXT, initial_sol REAL,
+  mcap_sol REAL, checks INTEGER DEFAULT 0, checked_at REAL, status TEXT DEFAULT 'neu');
+CREATE INDEX IF NOT EXISTS launch_creator ON launches(creator, ts);
+CREATE INDEX IF NOT EXISTS launch_status ON launches(status, ts);
+CREATE TABLE IF NOT EXISTS shadow (
+  id INTEGER PRIMARY KEY, mint TEXT, symbol TEXT, strategy TEXT, rule TEXT, reason TEXT, ts REAL, price REAL,
+  liq REAL, max_price REAL, min_price REAL, last_price REAL, last_liq REAL, updated REAL, parts TEXT,
+  done INTEGER DEFAULT 0, max_gain REAL, final REAL, outcome TEXT);
+CREATE INDEX IF NOT EXISTS shadow_open ON shadow(done, mint);
+CREATE INDEX IF NOT EXISTS shadow_rule ON shadow(rule, done);
 """
 
 
@@ -118,3 +129,5 @@ class Store:
                (time.time() - 3 * 86400,))
         self.x("DELETE FROM wallet_trades WHERE ts<?", (time.time() - 14 * 86400,))
         self.x("DELETE FROM events WHERE ts<?", (time.time() - 14 * 86400,))
+        self.x("DELETE FROM launches WHERE ts<?", (time.time() - 3 * 86400,))
+        self.x("DELETE FROM shadow WHERE ts<?", (time.time() - 30 * 86400,))

@@ -34,6 +34,8 @@ LABELS = {
     "max_chase_pct": "Copy: max. Aufpreis zur Wallet (%)",
     "min_wallet_score": "Copy: Mindest-Wallet-Score",
     "follow_sells": "Copy: mitverkaufen, wenn die Wallet verkauft",
+    "max_creator_tokens": "Max. Coins des Erstellers (Serien-Launcher)",
+    "weights": "Gewichte des Analysten",
 }
 
 SCANNER_DEFAULT = {
@@ -42,6 +44,7 @@ SCANNER_DEFAULT = {
     "tp1_sell_pct": 50, "max_hold_min": 120, "min_liq": 8000, "min_mcap": 10000, "max_mcap": 5_000_000,
     "min_age_min": 3, "max_age_h": 12, "min_vol_m5": 3000, "min_buys_m5": 20, "min_buy_ratio": 1.2,
     "min_m5_change": 3, "max_m5_change": 120, "max_top10_pct": 30, "min_holders": 50, "reentry_min": 60,
+    "max_creator_tokens": 5,
 }
 
 COPY_DEFAULT = dict(SCANNER_DEFAULT, **{
@@ -71,7 +74,13 @@ MUTABLE = {
     "tp1_pct": (25, 300, 25), "tp1_sell_pct": (20, 80, 10), "max_hold_min": (15, 360, 15),
     "min_buy_ratio": (0.8, 3.0, 0.1), "max_m5_change": (20, 300, 20), "min_vol_m5": (500, 20000, 500),
     "max_chase_pct": (3, 50, 3), "min_wallet_score": (0.35, 0.8, 0.05),
+    "min_liq": (2000, 50000, 1000), "min_mcap": (3000, 100000, 2000), "max_mcap": (200000, 50_000_000, 500000),
+    "min_age_min": (0, 30, 1), "max_age_h": (1, 72, 1), "min_buys_m5": (0, 150, 5), "min_m5_change": (-30, 30, 2),
+    "max_top10_pct": (15, 60, 5), "min_holders": (10, 400, 10), "max_creator_tokens": (1, 30, 1),
 }
+# Diese Regeln verändert der Lern-Agent nur gezielt (nach der Schatten-Auswertung), nicht zufällig
+DIRECTED_ONLY = {"min_liq", "min_mcap", "max_mcap", "min_age_min", "max_age_h", "min_buys_m5", "min_m5_change",
+                 "max_top10_pct", "min_holders", "max_creator_tokens"}
 
 
 def defaults(strategy):
@@ -82,7 +91,8 @@ def mutate(params, strategy, rng=None, n_changes=2):
     """Neue Testvariante: 1–n Regeln einen bis zwei Schritte verschieben (innerhalb der Grenzen)."""
     rng = rng or random.Random()
     out = dict(params)
-    keys = [k for k in MUTABLE if k in out and (strategy == "copy" or k not in ("max_chase_pct", "min_wallet_score"))]
+    keys = [k for k in MUTABLE if k in out and k not in DIRECTED_ONLY
+            and (strategy == "copy" or k not in ("max_chase_pct", "min_wallet_score"))]
     changed = {}
     for k in rng.sample(keys, k=min(len(keys), rng.randint(1, n_changes))):
         lo, hi, step = MUTABLE[k]
@@ -95,6 +105,17 @@ def mutate(params, strategy, rng=None, n_changes=2):
     if out["trail_pct"] >= out["trail_start_pct"]:
         out["trail_pct"] = max(5, out["trail_start_pct"] - 2)
     return out, changed
+
+
+def loosen(params, strategy, key, direction, steps=1):
+    """Gezielte Änderung: eine Regel in Richtung „lockerer“ verschieben (Vorschlag der Schatten-Auswertung)."""
+    out = dict(defaults(strategy), **params)
+    lo, hi, step = MUTABLE[key]
+    old = out[key]
+    v = max(lo, min(hi, old + direction * step * steps))
+    v = round(v, 2) if isinstance(step, float) else int(round(v))
+    out[key] = v
+    return out, ({key: (old, v)} if v != old else {})
 
 
 def diff(a, b):

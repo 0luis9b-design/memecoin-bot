@@ -13,7 +13,7 @@ const dt = (ts) => (ts ? new Date(ts * 1000).toLocaleString("de-DE", { day: "2-d
 const ago = (ts) => { if (!ts) return "–"; const s = Date.now() / 1000 - ts; return s < 60 ? Math.round(s) + " s" : s < 3600 ? Math.round(s / 60) + " min" : (s / 3600).toFixed(1) + " h"; };
 const price = (p) => (!p ? "–" : p >= 1 ? p.toFixed(4) : p.toPrecision(4));
 const short = (a) => (a ? esc(a.slice(0, 4) + "…" + a.slice(-4)) : "");
-const AGENT_COLORS = { scanner: "#4cc3ff", rugcheck: "#ff4d5e", analyst: "#a78bfa", sizer: "#f5c84c", executor: "#22d36b", risk: "#ff9f43", logger: "#e6edf3", scout: "#4cc3ff", copyfeed: "#22d36b", learning: "#f5c84c" };
+const AGENT_COLORS = { launchfeed: "#ff9f43", shadow: "#8695a3", scanner: "#4cc3ff", rugcheck: "#ff4d5e", analyst: "#a78bfa", sizer: "#f5c84c", executor: "#22d36b", risk: "#ff9f43", logger: "#e6edf3", scout: "#4cc3ff", copyfeed: "#22d36b", learning: "#f5c84c" };
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { credentials: "same-origin", ...opts, headers: { "X-Requested-With": "memebot", "Content-Type": "application/json", ...(opts.headers || {}) } });
@@ -36,6 +36,13 @@ $$("#eqRange button").forEach((b) => b.addEventListener("click", () => {
   loadEquity();
 }));
 $("#eqTests").addEventListener("change", loadEquity);
+let shDays = 7;
+$$("#shDays button").forEach((b) => b.addEventListener("click", () => {
+  shDays = +b.dataset.d;
+  $$("#shDays button").forEach((x) => x.classList.toggle("on", x === b));
+  loadShadow();
+}));
+const fmtVal = (v) => (v !== null && typeof v === "object" ? Object.entries(v).map(([k, x]) => `${k} ${x}`).join(", ") : v);
 ["#trAcc", "#trStatus"].forEach((s) => $(s).addEventListener("change", loadTrades));
 ["#lgAgent", "#lgAction"].forEach((s) => $(s).addEventListener("change", loadLog));
 let qT; $("#lgQ").addEventListener("input", () => { clearTimeout(qT); qT = setTimeout(loadLog, 300); });
@@ -251,14 +258,14 @@ async function loadLearning() {
   $("#proposals").innerHTML = (open.length ? open : L.proposals.slice(0, 5)).map((p) => `
     <div class="card" style="background:var(--card2)"><div class="row between wrap gap"><b>${esc(p.stats.testkonto)} → Hauptkonto</b><span class="tag ${p.status === "offen" ? "PROPOSAL" : p.status === "angenommen" ? "PARTIAL" : "CANCEL"}">${esc(p.status)}</span></div>
       <div class="small muted">${dt(p.ts)} · ${p.stats.trades} Trades · Rendite Test ${pct(p.stats.rendite_test)} vs. Haupt ${pct(p.stats.rendite_haupt)} · PF ${p.stats.pf_test ?? "–"} vs. ${p.stats.pf_haupt ?? "–"} · Max DD ${p.stats.dd_test} % vs. ${p.stats.dd_haupt} %</div>
-      <ul>${Object.entries(p.changes).map(([k, [a, b]]) => `<li>${esc(L.labels[k] || k)}: <span class="mono">${esc(a)} → ${esc(b)}</span></li>`).join("")}</ul>
+      <ul>${Object.entries(p.changes).map(([k, [a, b]]) => `<li>${esc(L.labels[k] || k)}: <span class="mono">${esc(fmtVal(a) ?? "Standard")} → ${esc(fmtVal(b))}</span></li>`).join("")}</ul>
       ${p.status === "offen" ? `<button class="act" data-prop="${p.id}" data-accept="1">Übernehmen</button> <button class="act no" data-prop="${p.id}" data-accept="0">Ablehnen</button>` : ""}</div>`).join("")
     || `<div class="empty">Noch keine Vorschläge. Ein Testkonto braucht mindestens ${L.min_trades} Trades und muss klar besser sein.</div>`;
   const mains = Object.fromEntries(L.accounts.filter((a) => a.kind === "main").map((a) => [a.strategy, a]));
   $("#variants").innerHTML = `<div class="tbl"><table><tr><th>Konto</th><th>Kontostand</th><th>Rendite</th><th>Trades</th><th>Treffer</th><th>PF</th><th>Max DD</th><th>Abweichende Regeln</th></tr>` +
     L.accounts.map((a) => {
       const m = mains[a.strategy];
-      const diff = a.kind === "main" ? "Hauptkonto" : Object.entries(a.params).filter(([k, v]) => m && m.params[k] !== v).map(([k, v]) => `${L.labels[k] || k}: ${v}`).join(" · ");
+      const diff = a.kind === "main" ? "Hauptkonto" : Object.entries(a.params).filter(([k, v]) => m && m.params[k] !== v).map(([k, v]) => `${L.labels[k] || k}: ${fmtVal(v)}`).join(" · ");
       return `<tr style="${a.active ? "" : "opacity:.45"}"><td><b>${esc(a.name)}</b>${a.active ? "" : " <span class='tag'>abgeschaltet</span>"}${a.kind === "main" || a.generation || !a.active ? `<div class="small muted">${esc(a.note || "")}</div>` : ""}</td>
         <td>${usd(a.equity)}</td><td class="${cls(a.pnl_pct)}">${pct(a.pnl_pct)}</td><td>${a.trades}</td><td>${a.winrate ?? "–"} %</td><td>${a.profit_factor ?? "–"}</td><td>−${a.max_drawdown} %</td><td class="small muted">${esc(diff)}</td></tr>`;
     }).join("") + `</table></div>`;
@@ -267,6 +274,38 @@ async function decideProposal(id, accept) {
   if (!confirm(accept ? "Regeln des Testkontos auf das Hauptkonto übernehmen?" : "Vorschlag ablehnen?")) return;
   try { await api("/api/proposal/" + id, { method: "POST", body: JSON.stringify({ accept }) }); } catch (e) { alert("Fehler: " + e.message); }
   loadLearning();
+}
+
+// ------------------------------------------------------------------ Auswertung
+const VERDICT_CLS = { "eher zu streng": "PROPOSAL", "schützt gut": "PARTIAL", "Vergleichswert": "ENTER" };
+async function loadShadow() {
+  const S = await api("/api/shadow?days=" + shDays);
+  $("#shInfo").innerHTML = `Jede Ablehnung des Hauptkontos wird ${S.hours} h weiterverfolgt. <b>Gewinner</b> = zwischendurch mindestens +50 %, <b>Rug</b> = am Ende −80 % oder Liquidität weg.
+    „gekauft“ ist der Vergleich: so liefen die Coins, die der Bot gekauft hat. Eine Regel, die mehr Gewinner und nicht mehr Rugs blockiert, ist eher zu streng.
+    Fällt ein Coin durch mehrere Regeln, zählt nur die erste – die Zahlen sind ein Hinweis, kein Beweis. Erfasst: ${S.stats.erfasst}, ausgewertet: ${S.stats.ausgewertet}.`;
+  const names = { scanner: "Scanner", copy: "Copy-Trading" };
+  $("#shadowTables").innerHTML = Object.entries(S.report).map(([strat, r]) => `
+    <h2 style="margin-top:14px">${esc(names[strat] || strat)}</h2>
+    <div class="tbl"><table><tr><th>Regel</th><th>Coins</th><th>läuft</th><th>Gewinner</th><th>Rugs</th><th>Verlierer</th><th>Ø bestes Plus</th><th>Ø Ende</th><th>Einschätzung</th></tr>
+    ${r.regeln.map((i) => `<tr style="${i.rule === "gekauft" ? "background:#0f1d16" : ""}"><td><b>${esc(i.name)}</b>${i.regel ? `<div class="small muted">${esc(i.regel)}</div>` : ""}</td>
+      <td>${i.n}</td><td class="muted">${i.offen || 0}</td><td class="pos">${i.n ? i.gewinner_pct + " %" : "–"}</td><td class="neg">${i.n ? i.rug_pct + " %" : "–"}</td>
+      <td>${i.n ? i.verlierer_pct + " %" : "–"}</td><td>${i.n ? pct(i.avg_bestes, 0) : "–"}</td><td class="${cls(i.avg_ende)}">${i.n ? pct(i.avg_ende, 0) : "–"}</td>
+      <td><span class="tag ${VERDICT_CLS[i.einschaetzung] || ""}">${esc(i.einschaetzung)}</span></td></tr>`).join("")}</table></div>`).join("")
+    || `<div class="empty">Noch keine Ablehnungen erfasst.</div>`;
+  const G = S.gewichte;
+  const rows = Object.keys(G.aktuell).map((k) => { const b = G.bestandteile[k] || {}; return `<tr><td><b>${esc(k)}</b></td><td>${G.aktuell[k]}</td>
+    <td class="mono">${b.gewinner ?? "–"}</td><td class="mono">${b.verlierer ?? "–"}</td><td class="mono ${cls(b.unterschied)}">${b.unterschied != null ? (b.unterschied >= 0 ? "+" : "") + b.unterschied : "–"}</td>
+    <td>${G.neu ? `<b>${G.neu[k]}</b>` : "–"}</td></tr>`; }).join("");
+  $("#weights").innerHTML = `<div class="small muted" style="margin-bottom:8px">${G.beispiele} Beispiele (${G.gewinner} Gewinner, ${G.verlierer} Verlierer/Rugs) aus gekauften und wegen Punktzahl abgelehnten Coins.
+    ${G.neu ? "Neue Gewichte berechnet – der Lern-Agent testet sie im Testkonto „Scanner · Gewichte“. Das Hauptkonto ändert sich nur nach deiner Freigabe." : `Neue Gewichte ab ${G.noetig} Beispielen.`}
+    Werte 0–1: wie stark der Bestandteil im Schnitt bei Gewinnern bzw. Verlierern ausgeprägt war.</div>
+    <div class="tbl"><table><tr><th>Bestandteil</th><th>Gewicht jetzt</th><th>Ø Gewinner</th><th>Ø Verlierer</th><th>Unterschied</th><th>gelernt</th></tr>${rows}</table></div>`;
+  const L = S.launches, c = S.launch_counts;
+  $("#launchInfo").innerHTML = `<div class="kv"><div>Verbindung</div><div>${L.verbunden ? '<span class="pos">● live</span>' : '<span class="neg">● getrennt</span>'} · Neustarts ${L.neustarts}${L.fehler ? ` · <span class="neg">${esc(L.fehler)}</span>` : ""}</div>
+    <div>Neue Coins</div><div>${L.neue_coins} seit Start · zuletzt ${L.pro_min}/min · letzte Nachricht vor ${ago(L.letzte_nachricht)}</div>
+    <div>Nachprüfung</div><div>${c.neu || 0} warten · ${c.aufgenommen || 0} lebendig → Beobachtungsliste · ${c.verworfen || 0} verworfen (letzte 3 Tage)</div>
+    <div>Migrationen</div><div>${L.migrationen} gesehen (Wechsel von der Pump.fun-Kurve zu PumpSwap)</div></div>
+    <div class="small muted" style="margin-top:6px">Kostenloser PumpPortal-Stream. Er liefert nur neue Coins und Migrationen; Trades einzelner Coins kosten dort Gebühren und werden nicht genutzt.</div>`;
 }
 
 // ------------------------------------------------------------------ System
@@ -278,6 +317,7 @@ async function loadSystem() {
     <div>Beobachtet</div><div>${s.watch} Coins, davon ${s.hot} heiß</div><div>Gebühren</div><div>${s.sim.gebuehr_pct} % je Trade + ${usd(s.sim.tx_kosten)} Netzwerk + ${s.sim.slip_zuschlag_pct} % Sandwich-Zuschlag</div>
     <div>Verzögerung</div><div>Orders werden frühestens nach ${s.sim.verzoegerung_s} s zum dann gültigen Kurs ausgeführt</div>
     <div>Telegram</div><div>${esc(s.telegram.status)} · gesendet ${s.telegram.gesendet}, unterdrückt ${s.telegram.unterdrueckt}</div>
+    <div>Launch-Feed</div><div>${s.launches.verbunden ? "live" : "getrennt"} · ${s.launches.neue_coins} neue Coins${s.launches.fehler ? " · " + esc(s.launches.fehler) : ""}</div>
     <div>Login</div><div>${s.auth ? "aktiv" : "⚠ nicht gesetzt"}</div><div>Letzter Fehler</div><div class="small">${esc(s.state.last_error || "–")}</div></div>`;
   $("#events").innerHTML = s.events.length ? s.events.map((e) => `<div class="small"><span class="muted">${dt(e.ts)}</span> <b>${esc(e.level)}</b> ${esc(e.title)} <span class="muted">${esc(e.body)}</span></div>`).join("") : `<div class="empty">Keine Ereignisse.</div>`;
 }
@@ -291,6 +331,7 @@ async function refresh() {
     else if (tab === "log") await loadLog();
     else if (tab === "wallets") await loadWallets();
     else if (tab === "learning") await loadLearning();
+    else if (tab === "shadow") await loadShadow();
     else if (tab === "system") await loadSystem();
   } catch (e) {
     $("#status").textContent = "Verbindung gestört: " + e.message;

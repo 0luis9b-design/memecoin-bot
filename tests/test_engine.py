@@ -41,7 +41,7 @@ class FakeMarket:
         mp.setattr(analysis, "available", lambda src: 99)
         mp.setattr(wallets, "available", lambda src: 99)
         mp.setattr(wallets, "rpc", lambda *a, **k: [])
-        for k, v in {"FILL_DELAY_SEC": 0, "REFRESH_HOT_SEC": 0, "REFRESH_ALL_SEC": 0, "MISSING_RUG_MIN": 0,
+        for k, v in {"FILL_DELAY_SEC": 0, "REFRESH_OPEN_SEC": 0, "REFRESH_HOT_SEC": 0, "REFRESH_ALL_SEC": 0, "MISSING_RUG_MIN": 0,
                      "SCAN_SEC": 0, "REPORT_HOUR": 99}.items():
             mp.setattr(config, k, v)
 

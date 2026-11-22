@@ -23,6 +23,7 @@
     <button data-tab="log">Log</button>
     <button data-tab="wallets">Wallets</button>
     <button data-tab="learning">Lernen <span id="propBadge" class="pill hide"></span></button>
+    <button data-tab="shadow">Auswertung</button>
     <button data-tab="system">System</button>
   </nav>
 </header>
@@ -39,7 +40,7 @@
     <label class="small"><input type="checkbox" id="eqTests"> Testkonten einblenden</label>
   </div>
   <div class="card">
-    <div class="row between"><h2>Agenten-Pipeline</h2><span class="small muted">scanner → rug check → analyst → sizer → executor → risk → logger · scout → copy-feed · lernen</span></div>
+    <div class="row between"><h2>Agenten-Pipeline</h2><span class="small muted">launch-feed + scanner → rug check → analyst → sizer → executor → risk → logger · scout → copy-feed · lernen + schatten</span></div>
     <div id="pipeline" class="pipeline"></div>
     <div id="skips" class="small muted"></div>
   </div>
@@ -80,6 +81,14 @@
 <section id="tab-learning" class="tab">
   <div class="card"><h2>Vorschläge zur Freigabe</h2><div id="proposals"></div></div>
   <div class="card"><h2>Haupt- und Testkonten</h2><div class="small muted" id="learnInfo"></div><div id="variants"></div></div>
+</section>
+
+<section id="tab-shadow" class="tab">
+  <div class="card"><div class="row between wrap gap"><h2>Schatten-Auswertung · was wurde aus den abgelehnten Coins?</h2>
+    <div class="seg" id="shDays"><button data-d="1">1 Tag</button><button data-d="7" class="on">7 Tage</button><button data-d="30">30 Tage</button></div></div>
+    <div id="shInfo" class="small muted"></div><div id="shadowTables"></div></div>
+  <div class="card"><h2>Analyst lernt seine Gewichtung</h2><div id="weights"></div></div>
+  <div class="card"><h2>Launch-Feed · neue Pump.fun-Coins live</h2><div id="launchInfo"></div></div>
 </section>
 
 <section id="tab-system" class="tab">

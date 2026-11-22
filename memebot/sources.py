@@ -21,7 +21,7 @@ LIMITS = {  # Abrufe pro Minute (mit Sicherheitsabstand zur offiziellen Grenze)
     "geckoterminal": 8,    # offiziell 30, auf Railway-IPs gab es aber schon ab ~10 Abrufen/min 429
     "dexscreener": 240,
     "rugcheck": config.RUGCHECK_PER_MIN,
-    "solana": 90,
+    "solana": 50,          # öffentlicher Zugang: bei 90/min gab es ~16 % 429
 }
 _lock = threading.Lock()
 _calls = {k: deque() for k in LIMITS}

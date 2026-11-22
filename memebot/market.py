@@ -205,7 +205,7 @@ def parse_rugcheck(r, pools=()):
         "insider_networks": int(f(r.get("graphInsidersDetected"))), "creator_pct": round(creator_pct, 2),
         "creator_tokens": len(r.get("creatorTokens") or []), "lp_locked_pct": min(lp_locked) if lp_locked else 100.0,
         "score_norm": f(r.get("score_normalised"), 0), "risks": risks,
-        "launchpad": ((r.get("launchpad") or {}).get("name") or ""),
+        "launchpad": ((r.get("launchpad") or {}).get("name") or ""), "creator": r.get("creator") or "",
     }
 
 

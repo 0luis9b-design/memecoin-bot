@@ -54,6 +54,22 @@ Beide starten mit 1.000 $ Spielgeld. Dazu kommen Testkonten mit abgewandelten Re
     Profit-Faktor und ohne viel größeren Drawdown, entsteht ein **Vorschlag**. Das Hauptkonto ändert sich erst nach
     Freigabe im Dashboard. Ein klar schlechtes Testkonto wird durch eine Abwandlung des besten Kontos ersetzt.
 
+## Neu in v1.1
+
+- **Launch-Feed**: Neue Pump.fun-Coins kommen in Echtzeit über den kostenlosen PumpPortal-Websocket, zusammen mit
+  den Migrationen zu PumpSwap. Nach 2–15 min prüft der Bot per DexScreener, ob ein Coin lebt. Nur dann kommt er auf
+  die Beobachtungsliste. Der Rug-Check erkennt damit auch **Serien-Launcher**: Hat eine Ersteller-Wallet in 24 h
+  mehr als 5 Coins gestartet, wird der Coin blockiert. Trades einzelner Coins kosten bei PumpPortal Gebühren und
+  werden deshalb nicht genutzt.
+- **Schnelle Spur**: Offene Positionen werden alle 5 s statt alle 20 s neu bewertet. Stops greifen dadurch früher.
+  Verschwindet der Pool einer Position, sucht der Bot automatisch den neuen Pool, zum Beispiel nach einer Migration.
+- **Schatten-Auswertung** (Tab „Auswertung“): Jede Ablehnung des Hauptkontos wird 2 h weiterverfolgt. Je Regel steht
+  dort, wie viele der abgelehnten Coins Gewinner (≥ +50 %) oder Rugs waren, im Vergleich zu den gekauften Coins.
+  Wird ein Testkonto ersetzt, lockert der Lern-Agent gezielt die Regel, die am deutlichsten zu streng wirkt.
+- **Gewichte des Analysten**: Ab 100 Beispielen rechnet der Lern-Agent aus, welche Bestandteile Gewinner von
+  Verlierern unterscheiden. Die neuen Gewichte testet er im Testkonto „Scanner · Gewichte“. Ins Hauptkonto kommen
+  sie nur nach deiner Freigabe.
+
 ## Railway
 
 | Variable | Zweck |

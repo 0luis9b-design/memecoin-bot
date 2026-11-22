@@ -174,6 +174,7 @@ def _auto_start():
         return
     atexit.register(_stop.set)
     _start_loop()
+    engine.launches.start()   # Echtzeit-Feed neuer Pump.fun-Coins (eigener Faden)
     threading.Thread(target=_watchdog, name="memebot-watchdog", daemon=True).start()
 
 
@@ -360,9 +361,24 @@ def api_proposal(pid):
     return jsonify(ok=ok, message=msg), (200 if ok else 400)
 
 
+@app.get("/api/shadow")
+def api_shadow():
+    try:
+        days = max(1, min(30, int(request.args.get("days", 7))))
+    except ValueError:
+        days = 7
+    stats = {"erfasst": store.val("SELECT COUNT(*) FROM shadow", default=0),
+             "ausgewertet": store.val("SELECT COUNT(*) FROM shadow WHERE done=1", default=0)}
+    return jsonify(report=engine.shadow.report(days), stats=stats, hours=config.SHADOW_H, min_n=config.SHADOW_MIN_N,
+                   gewichte=engine.learner.weight_analysis(),
+                   launches=engine.launches.stats,
+                   launch_counts={r["status"]: r["n"] for r in store.q("SELECT status, COUNT(*) n FROM launches GROUP BY status")})
+
+
 @app.get("/api/system")
 def api_system():
     return jsonify(sources=sources.status(), state=engine.state, telegram=notify.state, auth=AUTH_AKTIV,
+                   launches=engine.launches.stats,
                    events=store.q("SELECT * FROM events ORDER BY ts DESC LIMIT 30"),
                    watch=store.val("SELECT COUNT(*) FROM tokens WHERE status='watch'", default=0),
                    hot=store.val("SELECT COUNT(*) FROM tokens WHERE status='watch' AND hot=1", default=0),

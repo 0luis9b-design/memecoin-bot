@@ -14,8 +14,10 @@ from zoneinfo import ZoneInfo
 from . import config, market, notify, params
 from .agents import analysis
 from .agents.analysis import RugGuard
+from .agents.launches import LaunchFeed
 from .agents.learning import Learner
 from .agents.scanner import Scanner
+from .agents.shadow import Shadow
 from .agents.trader import Trader
 from .agents.wallets import CopyFeed, Scout
 from .notify import esc
@@ -34,7 +36,9 @@ class Engine:
         self.trader = Trader(store)
         self.scout = Scout(store)
         self.copy = CopyFeed(store)
-        self.learner = Learner(store, self.trader)
+        self.shadow = Shadow(store)
+        self.launches = LaunchFeed(store)
+        self.learner = Learner(store, self.trader, self.shadow)
         self.due = {}
         self.skips = Counter()          # Gründe, warum Coins nicht gekauft wurden (für die Pipeline-Anzeige)
         self.block_reasons = Counter()  # welche Rug-Check-Regel fällt wie oft durch (je Coin und 10 min einmal)
@@ -72,10 +76,18 @@ class Engine:
         t0 = time.time()
         if self._due("scan", config.SCAN_SEC):
             self.scanner.discover()
+        if self._due("launches", 30):
+            self.launches.check(self.scanner)
+            self.launches.handle_migrations(self.scanner)
+        if self._due("lost_pools", 60):
+            self.find_lost_pools()
         updated = self.scanner.refresh()
         self.trader.process(updated)
         if updated:
+            self.shadow.update(updated)
             self.evaluate_scanner(updated)
+        if self._due("shadow", 300):
+            self.shadow.finalize()
         if self._due("copy", config.COPY_SEC):
             try:
                 self.handle_copy(self.copy.poll())
@@ -108,11 +120,12 @@ class Engine:
                 continue
             passing = []
             for a in accs:
-                ok, why = analysis.prefilter(d, a["params"])
+                ok, key, why = analysis.check_pre(d, a["params"])
                 if ok:
                     passing.append(a)
                 elif a["kind"] == "main":
-                    self.skips[why.split(" ")[0]] += 1
+                    self.skips[analysis.rule_name(key)] += 1
+                    self.shadow.record("scanner", mint, d["symbol"], key, why, d)
             if not passing:
                 continue
             self._evaluate(mint, d, passing, strategy="scanner")
@@ -122,24 +135,31 @@ class Engine:
         if status == "warten":
             return
         hist = self.scanner.history(mint, 30)
-        sc, parts = analysis.score(d, hist, rug)
+        comps = analysis.components(d, hist, rug)
         self.analyst["bewertet"] += 1
-        self.analyst["letzte"] = {"symbol": d["symbol"], "punkte": sc, "zeit": time.time()}
-        if extra:
-            sc = extra["score_fn"](sc)
         log_now = time.time() - self.last_logged.get((strategy, mint), 0) > 600
         for a in accs:
             p = a["params"]
+            sc, parts = analysis.total(comps, p.get("weights"))   # jedes Konto rechnet mit seinen eigenen Gewichten
+            if extra:
+                sc = extra["score_fn"](sc)
+            if a["kind"] == "main":
+                self.analyst["letzte"] = {"symbol": d["symbol"], "punkte": sc, "zeit": time.time()}
             checks = RugGuard.checks(rug, p)
-            failed = [n for n, ok, _ in checks if not ok]
+            failed = [c for c in checks if not c[1]]
             if failed:
+                if a["kind"] == "main":
+                    key = failed[0][3] if len(failed) == 1 else "rug:mehrere"
+                    self.shadow.record(strategy, mint, d["symbol"], key, ", ".join(c[0] for c in failed), d)
                 if log_now and a["kind"] == "main":
-                    self.block_reasons.update(failed)
-                    self.s.decide("rugcheck", "BLOCK", f"{a['name']}: durchgefallen – {', '.join(failed)}", a["id"], mint, d["symbol"],
-                                  {"checks": checks})
+                    self.block_reasons.update(c[0] for c in failed)
+                    self.s.decide("rugcheck", "BLOCK", f"{a['name']}: durchgefallen – {', '.join(c[0] for c in failed)}", a["id"], mint,
+                                  d["symbol"], {"checks": checks})
                     self.skips["Rug-Check"] += 1
                 continue
             if sc < p["min_score"]:
+                if a["kind"] == "main":
+                    self.shadow.record(strategy, mint, d["symbol"], "punktzahl", f"Punktzahl {sc:.0f} < {p['min_score']}", d, parts)
                 if log_now and a["kind"] == "main":
                     self.s.decide("analyst", "SKIP", f"{a['name']}: Punktzahl {sc:.0f} < {p['min_score']}", a["id"], mint, d["symbol"],
                                   {"punkte": parts})
@@ -156,7 +176,8 @@ class Engine:
                    "data": {"strategie": strategy, "werte": {k: d.get(k) for k in ("price", "mcap", "liq", "reserve", "vol_m5", "vol_h1",
                                                                                       "buys_m5", "sells_m5", "ch_m5", "ch_h1", "age_min", "dex")},
                             "checks": checks, "punkte": parts, **({"copy": extra["info"]} if extra else {})}}
-            self.trader.try_enter(a, sig, "analyst" if strategy == "scanner" else "copyfeed")
+            if self.trader.try_enter(a, sig, "analyst" if strategy == "scanner" else "copyfeed"):
+                self.shadow.record(strategy, mint, d["symbol"], "gekauft", reason, d, parts)
         if log_now:
             self.last_logged[(strategy, mint)] = time.time()
             if len(self.last_logged) > 5000:
@@ -185,9 +206,10 @@ class Engine:
             n_wallets = self.copy.cluster(sg["mint"])
             passing = []
             for a in accs:
-                ok, why = analysis.prefilter(d, a["params"])
+                ok, key, why = analysis.check_pre(d, a["params"])
                 if not ok:
                     if a["kind"] == "main":
+                        self.shadow.record("copy", sg["mint"], d["symbol"], key, why, d)
                         self.s.decide("copyfeed", "SKIP", f"{a['name']}: {why}", a["id"], sg["mint"], d["symbol"], {"wallet": sg["wallet"]})
                     continue
                 passing.append(a)
@@ -200,6 +222,7 @@ class Engine:
                 p = a["params"]
                 if chase > p["max_chase_pct"]:
                     if a["kind"] == "main":
+                        self.shadow.record("copy", sg["mint"], d["symbol"], "aufpreis", f"{chase:.0f} % Aufpreis", d)
                         self.s.decide("copyfeed", "SKIP", f"{a['name']}: {chase:.0f} % teurer als die Wallet (max. {p['max_chase_pct']} %)",
                                       a["id"], sg["mint"], d["symbol"])
                     return False
@@ -226,6 +249,23 @@ class Engine:
                  (json.dumps(best), time.time(), best["price"], mint))
         return best
 
+    def find_lost_pools(self):
+        """Pool einer offenen Position nicht mehr auffindbar (z. B. Migration ohne Meldung)? Neuen Pool suchen."""
+        rows = self.s.q("""SELECT DISTINCT t.mint FROM tokens t JOIN positions p ON p.mint=t.mint
+                           WHERE p.status IN ('pending','open') AND t.missing_since IS NOT NULL AND t.missing_since < ?""",
+                        (time.time() - 120,))
+        if not rows:
+            return 0
+        try:
+            best = market.best_pair_for_mint([r["mint"] for r in rows])
+        except SourceError:
+            return 0
+        for mint, d in best.items():
+            self.s.x("UPDATE tokens SET pool=?, dex=?, missing_since=NULL, updated=0 WHERE mint=?", (d["pool"], d["dex"], mint))
+            self.s.x("UPDATE positions SET pool=?, dex=? WHERE mint=? AND status IN ('pending','open')", (d["pool"], d["dex"], mint))
+            self.s.decide("risk", "INFO", f"Pool gewechselt: {d['symbol']} handelt jetzt auf {d['dex']}", mint=mint, symbol=d["symbol"])
+        return len(best)
+
     def _follow_sell(self, sg, accs):
         for a in accs:
             if not a["params"].get("follow_sells"):
@@ -247,6 +287,8 @@ class Engine:
             "bewertet": self.analyst["bewertet"], "orders": self.trader.stats["orders"],
             "offen": len(self.trader.open_positions()), "rug_blockiert": self.rug.stats["blockiert"],
             "wallets_beobachtet": self.scout.stats["beobachtet"], "copy_abfragen": self.copy.stats["abgefragt"],
+            "launch_feed": {k: self.launches.stats[k] for k in ("verbunden", "neue_coins", "pro_min", "aufgenommen", "migrationen", "fehler")},
+            "schatten": self.shadow.stats,
             "rug_gruende": dict(self.block_reasons.most_common(6)), "ausschluss": dict(self.skips.most_common(6)),
             "quellen": {k: f"{v['ok']} ok / {v['fehler']} Fehler" + (f" ({v['letzter_fehler']})" if v["fehler"] else "")
                         for k, v in STATS.items()},
@@ -281,6 +323,11 @@ class Engine:
         return [
             {"id": "scanner", "name": "Scanner", "zeile": f"{sc['beobachtet']} Coins beobachtet", "wert": sc["pools_gesehen"],
              "einheit": "Pools gesehen", "fehler": sc["fehler"], "zuletzt": sc["letzter_scan"]},
+            {"id": "launchfeed", "name": "Launch-Feed", "zeile": (f"live · {self.launches.stats['pro_min']:.0f}/min · "
+                                                                 f"{self.launches.stats['aufgenommen']} aufgenommen")
+                                                                if self.launches.stats["verbunden"] else "nicht verbunden",
+             "wert": self.launches.stats["neue_coins"], "einheit": "neue Pump.fun-Coins", "fehler": self.launches.stats["fehler"],
+             "zuletzt": self.launches.stats["letzte_nachricht"]},
             {"id": "rugcheck", "name": "Rug-Check", "zeile": "harte Ausschlussregeln", "wert": self.rug.stats["blockiert"],
              "einheit": "blockiert", "fehler": self.rug.stats["fehler"]},
             {"id": "analyst", "name": "Analyst", "zeile": (f"zuletzt {self.analyst['letzte']['symbol']}: {self.analyst['letzte']['punkte']:.0f}"
@@ -300,4 +347,6 @@ class Engine:
              "zuletzt": self.copy.stats["letzte_runde"]},
             {"id": "learning", "name": "Lern-Agent", "zeile": f"{self.learner.stats['vorschlaege']} Vorschläge",
              "wert": self.learner.stats["ersetzt"], "einheit": "Varianten ersetzt", "zuletzt": self.learner.stats["letzter_lauf"]},
+            {"id": "shadow", "name": "Schatten", "zeile": f"{self.shadow.stats['ausgewertet']} ausgewertet",
+             "wert": self.shadow.stats["erfasst"], "einheit": "Ablehnungen verfolgt"},
         ]

@@ -116,9 +116,12 @@ class Scanner:
         due = []
         for r in rows:
             age = now - (r["updated"] or 0)
-            if r["mint"] in open_mints or r["hot"]:
+            if r["mint"] in open_mints:
+                if age >= config.REFRESH_OPEN_SEC - 1:
+                    due.append((0, r["pool"]))
+            elif r["hot"]:
                 if age >= config.REFRESH_HOT_SEC - 2:
-                    due.append((0 if r["mint"] in open_mints else 1, r["pool"]))
+                    due.append((1, r["pool"]))
             elif not hot_only and age >= config.REFRESH_ALL_SEC:
                 due.append((2, r["pool"]))
         due.sort()

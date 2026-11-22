@@ -2,6 +2,10 @@
 
 Rug-Check: harte Ausschlussregeln (wer durchfällt, wird nie gekauft).
 Analyst:   Punktzahl 0–100 aus Momentum, Kaufdruck, Volumen-Beschleunigung, Aktivität, Liquidität, Sicherheit und Chart.
+           Die Gewichte stehen in den Regeln jedes Kontos – der Lern-Agent kann neue Gewichte in einem Testkonto ausprobieren.
+
+Jede Regel hat einen kurzen Schlüssel (z. B. „liquiditaet“, „rug:top10“). Die Schatten-Auswertung zählt damit,
+was aus den abgelehnten Coins geworden ist.
 """
 import json
 import time
@@ -9,31 +13,63 @@ import time
 from .. import config, market
 from ..sources import SourceError, available
 
+# Regel-Schlüssel -> (Regel im Konto, Richtung zum Lockern), für die Schatten-Auswertung und den Lern-Agenten
+RULE_PARAM = {
+    "zu_jung": ("min_age_min", -1), "zu_alt": ("max_age_h", 1), "liquiditaet": ("min_liq", -1),
+    "mcap_klein": ("min_mcap", -1), "mcap_gross": ("max_mcap", 1), "volumen": ("min_vol_m5", -1),
+    "kaeufe": ("min_buys_m5", -1), "kaufdruck": ("min_buy_ratio", -1), "anstieg_klein": ("min_m5_change", -1),
+    "anstieg_gross": ("max_m5_change", 1), "rug:top10": ("max_top10_pct", 1), "rug:holder": ("min_holders", -1),
+    "rug:serie": ("max_creator_tokens", 1), "punktzahl": ("min_score", -1), "aufpreis": ("max_chase_pct", 1),
+}
+RULE_NAMES = {
+    "zu_jung": "Pool zu jung", "zu_alt": "Pool zu alt", "liquiditaet": "Liquidität zu klein",
+    "mcap_klein": "Marktkap. zu klein", "mcap_gross": "Marktkap. zu groß", "volumen": "Volumen 5 min zu klein",
+    "kaeufe": "zu wenige Käufe", "kaufdruck": "Kaufdruck zu schwach", "anstieg_klein": "Anstieg zu klein",
+    "anstieg_gross": "schon zu weit gestiegen", "punktzahl": "Punktzahl zu niedrig", "gekauft": "gekauft (Vergleich)",
+    "rug:mint": "Mint-Funktion an", "rug:freeze": "Freeze-Funktion an", "rug:fee": "Transfergebühr",
+    "rug:rugged": "schon gerugged", "rug:top10": "Top 10 zu groß", "rug:holder": "zu wenige Holder",
+    "rug:ersteller": "Ersteller hält zu viel", "rug:lp": "Liquidität nicht gesperrt", "rug:insider": "Insider-Netzwerk",
+    "rug:serie": "Serien-Launcher", "aufpreis": "zu teuer gegenüber der Wallet", "rug:mehrere": "mehrere Rug-Regeln",
+}
+
+
+def rule_name(key):
+    if key.startswith("rug:gefahr:"):
+        return "Gefahr-Warnung: " + key.split(":", 2)[2]
+    return RULE_NAMES.get(key, key)
+
 
 # ---------------------------------------------------------------- Vorfilter (billig, ohne Abruf)
-def prefilter(d, p):
-    """Lohnt sich ein genauerer Blick? -> (ja/nein, Grund)"""
+def check_pre(d, p):
+    """Lohnt sich ein genauerer Blick? -> (ja/nein, Regel-Schlüssel, Grund)"""
     liq = d["liq"] or d["reserve"] * 2
     if d["age_min"] < p["min_age_min"]:
-        return False, f"zu jung ({d['age_min']:.0f} min)"
+        return False, "zu_jung", f"zu jung ({d['age_min']:.0f} min)"
     if d["age_min"] > p["max_age_h"] * 60:
-        return False, f"zu alt ({d['age_min'] / 60:.0f} h)"
+        return False, "zu_alt", f"zu alt ({d['age_min'] / 60:.0f} h)"
     if liq < p["min_liq"]:
-        return False, f"Liquidität {liq:,.0f} $ < {p['min_liq']:,.0f} $"
-    if not (p["min_mcap"] <= d["mcap"] <= p["max_mcap"]):
-        return False, f"Marktkapitalisierung {d['mcap']:,.0f} $ außerhalb"
+        return False, "liquiditaet", f"Liquidität {liq:,.0f} $ < {p['min_liq']:,.0f} $"
+    if d["mcap"] < p["min_mcap"]:
+        return False, "mcap_klein", f"Marktkapitalisierung {d['mcap']:,.0f} $ zu klein"
+    if d["mcap"] > p["max_mcap"]:
+        return False, "mcap_gross", f"Marktkapitalisierung {d['mcap']:,.0f} $ zu groß"
     if d["vol_m5"] < p["min_vol_m5"]:
-        return False, f"Volumen 5 min {d['vol_m5']:,.0f} $ zu klein"
+        return False, "volumen", f"Volumen 5 min {d['vol_m5']:,.0f} $ zu klein"
     if d["buys_m5"] < p["min_buys_m5"]:
-        return False, f"nur {d['buys_m5']} Käufe in 5 min"
+        return False, "kaeufe", f"nur {d['buys_m5']} Käufe in 5 min"
     ratio = d["buys_m5"] / max(1, d["sells_m5"])
     if ratio < p["min_buy_ratio"]:
-        return False, f"Kaufdruck {ratio:.2f} zu schwach"
+        return False, "kaufdruck", f"Kaufdruck {ratio:.2f} zu schwach"
     if d["ch_m5"] < p["min_m5_change"]:
-        return False, f"Anstieg 5 min {d['ch_m5']:+.0f} % zu klein"
+        return False, "anstieg_klein", f"Anstieg 5 min {d['ch_m5']:+.0f} % zu klein"
     if d["ch_m5"] > p["max_m5_change"]:
-        return False, f"schon +{d['ch_m5']:.0f} % in 5 min – nicht hinterherrennen"
-    return True, ""
+        return False, "anstieg_gross", f"schon +{d['ch_m5']:.0f} % in 5 min – nicht hinterherrennen"
+    return True, "", ""
+
+
+def prefilter(d, p):
+    ok, _, why = check_pre(d, p)
+    return ok, why
 
 
 # ---------------------------------------------------------------- Rug-Check
@@ -47,34 +83,44 @@ class RugGuard:
     def report(self, mint, pool):
         """Bericht aus dem Zwischenspeicher oder frisch von RugCheck. None = gerade kein Abruf möglich."""
         row = self.s.one("SELECT rug, rug_at FROM tokens WHERE mint=?", (mint,))
+        r = None
         if row and row["rug"] and time.time() - (row["rug_at"] or 0) < config.RUGCHECK_CACHE_MIN * 60:
-            return json.loads(row["rug"])
-        if available("rugcheck") <= 0:
-            return None
-        try:
-            r = market.rugcheck(mint, (pool,))
-        except SourceError as e:
-            self.stats["fehler"] = str(e)
-            return None
-        self.stats["geprueft"] += 1
-        self.s.x("UPDATE tokens SET rug=?, rug_at=? WHERE mint=?", (json.dumps(r), time.time(), mint))
+            r = json.loads(row["rug"])
+        if r is None:
+            if available("rugcheck") <= 0:
+                return None
+            try:
+                r = market.rugcheck(mint, (pool,))
+            except SourceError as e:
+                self.stats["fehler"] = str(e)
+                return None
+            self.stats["geprueft"] += 1
+            self.s.x("UPDATE tokens SET rug=?, rug_at=? WHERE mint=?", (json.dumps(r), time.time(), mint))
+        # Wie viele Coins hat der Ersteller in den letzten 24 h gestartet? (eigener Live-Stream von Pump.fun)
+        if r.get("creator"):
+            n = self.s.val("SELECT COUNT(*) FROM launches WHERE creator=? AND ts>?", (r["creator"], time.time() - 86400), 0)
+            r["creator_launches"] = max(r.get("creator_tokens", 0), n)
         return r
 
     @staticmethod
     def checks(r, p):
-        """Liste von (Name, bestanden, Wert) – alle müssen bestanden sein."""
+        """Liste von (Name, bestanden, Wert, Schlüssel) – alle müssen bestanden sein."""
         danger = [x["name"] for x in r["risks"] if (x.get("level") or "") == "danger"]
+        serie = r.get("creator_launches", r.get("creator_tokens", 0)) or 0
+        max_serie = p.get("max_creator_tokens", 5)
         c = [
-            ("Mint-Funktion aus", not r["mint_auth"], "aus" if not r["mint_auth"] else "AN"),
-            ("Freeze-Funktion aus", not r["freeze_auth"], "aus" if not r["freeze_auth"] else "AN"),
-            ("keine Transfergebühr", r["transfer_fee"] <= 0, f"{r['transfer_fee']:.1f} %"),
-            ("nicht gerugged", not r["rugged"], "ok" if not r["rugged"] else "GERUGGED"),
-            (f"Top 10 ≤ {p['max_top10_pct']} %", r["top10_pct"] <= p["max_top10_pct"], f"{r['top10_pct']:.0f} %"),
-            (f"≥ {p['min_holders']} Holder", r["holders"] >= p["min_holders"], str(r["holders"])),
-            ("Ersteller ≤ 5 %", r["creator_pct"] <= 5, f"{r['creator_pct']:.1f} %"),
-            ("Liquidität gesperrt ≥ 90 %", r["lp_locked_pct"] >= 90, f"{r['lp_locked_pct']:.0f} %"),
-            ("keine Insider-Netzwerke", r["insider_networks"] == 0, str(r["insider_networks"])),
-            ("keine Gefahr-Warnung", not danger, ", ".join(danger)[:80] or "keine"),
+            ("Mint-Funktion aus", not r["mint_auth"], "aus" if not r["mint_auth"] else "AN", "rug:mint"),
+            ("Freeze-Funktion aus", not r["freeze_auth"], "aus" if not r["freeze_auth"] else "AN", "rug:freeze"),
+            ("keine Transfergebühr", r["transfer_fee"] <= 0, f"{r['transfer_fee']:.1f} %", "rug:fee"),
+            ("nicht gerugged", not r["rugged"], "ok" if not r["rugged"] else "GERUGGED", "rug:rugged"),
+            (f"Top 10 ≤ {p['max_top10_pct']} %", r["top10_pct"] <= p["max_top10_pct"], f"{r['top10_pct']:.0f} %", "rug:top10"),
+            (f"≥ {p['min_holders']} Holder", r["holders"] >= p["min_holders"], str(r["holders"]), "rug:holder"),
+            ("Ersteller ≤ 5 %", r["creator_pct"] <= 5, f"{r['creator_pct']:.1f} %", "rug:ersteller"),
+            ("Liquidität gesperrt ≥ 90 %", r["lp_locked_pct"] >= 90, f"{r['lp_locked_pct']:.0f} %", "rug:lp"),
+            ("keine Insider-Netzwerke", r["insider_networks"] == 0, str(r["insider_networks"]), "rug:insider"),
+            (f"kein Serien-Launcher (≤ {max_serie} Coins)", serie <= max_serie, str(serie), "rug:serie"),
+            ("keine Gefahr-Warnung", not danger, ", ".join(danger)[:80] or "keine",
+             "rug:gefahr:" + (danger[0] if danger else "")),
         ]
         return c
 
@@ -84,7 +130,7 @@ class RugGuard:
         if r is None:
             return "warten", [], None
         c = self.checks(r, p)
-        if all(ok for _, ok, _ in c):
+        if all(x[1] for x in c):
             return "ok", c, r
         self.stats["blockiert"] += 1
         return "block", c, r
@@ -118,8 +164,8 @@ def chart_score(hist, price):
     return s, f"über Schnitt: {'ja' if price >= avg else 'nein'}, höhere Tiefs: {'ja' if low_late >= low_early else 'nein'}, {dd:.0f} % unter Hoch"
 
 
-def score(d, hist, rug):
-    """-> (Punktzahl 0–100, Bestandteile)"""
+def components(d, hist, rug):
+    """Die 7 Bestandteile, jeweils 0–1 mit kurzer Erklärung."""
     parts = {}
     m5, h1 = d["ch_m5"], d["ch_h1"]
     mom = _lin(m5, 0, 30)
@@ -141,8 +187,20 @@ def score(d, hist, rug):
         parts["sicherheit"] = (safe, f"Top 10 {rug['top10_pct']:.0f} %, {rug['holders']} Holder")
     else:
         parts["sicherheit"] = (0.3, "kein Bericht")
-    cs, ctext = chart_score(hist, d["price"])
-    parts["chart"] = (cs, ctext)
-    total = sum(WEIGHTS[k] * v for k, (v, _) in parts.items())
-    return round(total, 1), {k: {"wert": round(v, 2), "punkte": round(WEIGHTS[k] * v, 1), "text": t}
-                             for k, (v, t) in parts.items()}
+    parts["chart"] = chart_score(hist, d["price"])
+    return parts
+
+
+def total(parts, weights=None):
+    """Punktzahl 0–100 aus den Bestandteilen. Gewichte werden auf Summe 100 gebracht."""
+    w = dict(WEIGHTS, **(weights or {}))
+    s = sum(w.get(k, 0) for k in parts) or 1
+    pts = {k: 100 * w.get(k, 0) / s * v for k, (v, _) in parts.items()}
+    detail = {k: {"wert": round(v, 2), "punkte": round(pts[k], 1), "text": t, "gewicht": round(100 * w.get(k, 0) / s, 1)}
+              for k, (v, t) in parts.items()}
+    return round(sum(pts.values()), 1), detail
+
+
+def score(d, hist, rug, weights=None):
+    """-> (Punktzahl 0–100, Bestandteile)"""
+    return total(components(d, hist, rug), weights)
