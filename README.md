@@ -70,6 +70,26 @@ Beide starten mit 1.000 $ Spielgeld. Dazu kommen Testkonten mit abgewandelten Re
   Verlierern unterscheiden. Die neuen Gewichte testet er im Testkonto „Scanner · Gewichte“. Ins Hauptkonto kommen
   sie nur nach deiner Freigabe.
 
+## Neu in v1.2
+
+- **Replay-Backtest** (Tab „Backtest“, automatisch alle 12 h oder per Knopf): Spielt die gespeicherten Kurs-Aufnahmen
+  der letzten 72 h mit über 100 Regelsätzen erneut ab, mit denselben Regeln, Gebühren und Verzögerungen wie live
+  (`memebot/rules.py`). Ausgewählt wird auf den ersten 70 % der Zeit, geprüft auf den letzten 30 %. Der beste
+  robuste Regelsatz wird ein Testkonto „Scanner · Replay“; ins Hauptkonto kommt er nur nach Freigabe.
+  Kurs-Aufnahmen werden jetzt 4 Tage aufbewahrt.
+- **Neue Ausstiege** als Regeln und Testkonten:
+  - Zeit-Stop: nach 10 min kein Plus → raus
+  - Kaufdruck-Ausstieg: 30 s lang deutlich mehr Verkäufe als Käufe
+  - Stop nach Schwankung: zwischen 6 und 35 %
+- **Copy-Trading mit Rückmeldung**: Der Wallet-Score richtet sich auch danach, wie *unsere* Kopien gelaufen sind.
+  Ab 5 Kopien mit Verlust und weniger als 30 % Treffern folgt der Bot der Wallet nicht mehr. Testkonto „Cluster“:
+  Kauf erst, wenn mindestens 2 Smart Wallets kaufen.
+- **Marktlage**: Die Markt-Hitze von 0–100 ergibt sich aus neuen Coins pro Minute, dem Anteil der Coins im Plus, den
+  heißen Coins und dem SOL-Kurs. Das Testkonto „Marktlage“ setzt bei kaltem Markt die Hälfte ein und pausiert unter 15.
+  Die Auswertung nach Uhrzeit steht im Tab „Auswertung“.
+- **Neue Merkmale ohne Gewicht**: DexScreener-Boost und Holder-Wachstum. Der Lern-Agent schaltet sie ein, wenn sie
+  Gewinner erkennen.
+
 ## Railway
 
 | Variable | Zweck |

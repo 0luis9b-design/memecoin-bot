@@ -11,7 +11,9 @@ from collections import Counter
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from . import config, market, notify, params
+from . import config, market, notify, params, rules
+from .agents.regime import Regime
+from .backtest import Backtester
 from .agents import analysis
 from .agents.analysis import RugGuard
 from .agents.launches import LaunchFeed
@@ -39,6 +41,8 @@ class Engine:
         self.shadow = Shadow(store)
         self.launches = LaunchFeed(store)
         self.learner = Learner(store, self.trader, self.shadow)
+        self.regime = Regime(store)
+        self.backtester = Backtester(store, self.trader)
         self.due = {}
         self.skips = Counter()          # Gründe, warum Coins nicht gekauft wurden (für die Pipeline-Anzeige)
         self.block_reasons = Counter()  # welche Rug-Check-Regel fällt wie oft durch (je Coin und 10 min einmal)
@@ -46,8 +50,24 @@ class Engine:
         self.last_logged = {}           # mint -> Zeit (Analyst-Log höchstens alle 10 min je Coin)
         self.state = {"cycles": 0, "last_cycle": None, "last_error": "", "started": time.time()}
         self.ensure_accounts()
+        self.ensure_variants()
+        self.due["backtest"] = time.time()   # erster Replay-Lauf nach BACKTEST_EVERY_H (vorher fehlen die Aufnahmen)
 
     # ------------------------------------------------------------ Konten anlegen
+    def ensure_variants(self):
+        """Neue Startvarianten aus späteren Versionen in bestehenden Datenbanken nachträglich anlegen."""
+        now = time.time()
+        names = {r["name"] for r in self.s.q("SELECT name FROM accounts")}
+        for strategy in ("scanner", "copy"):
+            base = params.defaults(strategy)
+            for vname, changes in params.VARIANTS[strategy].items():
+                name = f"{NAMES[strategy]} · {vname}"
+                if name in names:
+                    continue
+                self.s.x("INSERT INTO accounts(name,strategy,kind,params,start_balance,cash,created,note,generation) VALUES(?,?,?,?,?,?,?,?,0)",
+                         (name, strategy, "test", json.dumps(dict(base, **changes)), config.START_BALANCE, config.START_BALANCE, now,
+                          "Startvariante: " + ", ".join(f"{params.LABELS.get(k, k)} {v}" for k, v in changes.items())))
+                self.s.decide("system", "INFO", f"neues Testkonto {name} angelegt")
     def ensure_accounts(self):
         if self.s.val("SELECT COUNT(*) FROM accounts", default=0):
             return
@@ -88,6 +108,10 @@ class Engine:
             self.evaluate_scanner(updated)
         if self._due("shadow", 300):
             self.shadow.finalize()
+        if self._due("regime", 300):
+            self.regime.update()
+        if self._due("backtest", config.BACKTEST_EVERY_H * 3600):
+            self.backtester.start("geplant")
         if self._due("copy", config.COPY_SEC):
             try:
                 self.handle_copy(self.copy.poll())
@@ -136,6 +160,7 @@ class Engine:
             return
         hist = self.scanner.history(mint, 30)
         comps = analysis.components(d, hist, rug)
+        swing = rules.swing_pct([h["price"] for h in hist])
         self.analyst["bewertet"] += 1
         log_now = time.time() - self.last_logged.get((strategy, mint), 0) > 600
         for a in accs:
@@ -172,10 +197,11 @@ class Engine:
                 f"Vol 5 min {d['vol_m5']:,.0f} $ · {d['buys_m5']} Käufe/{d['sells_m5']} Verk. · {d['ch_m5']:+.0f} % · "
                 f"{rug['holders']} Holder · Top 10 {rug['top10_pct']:.0f} %")
             sig = {"mint": mint, "pool": d["pool"], "symbol": d["symbol"], "dex": d["dex"], "score": sc, "price": d["price"],
-                   "reserve": d["reserve"], "reason": reason,
+                   "reserve": d["reserve"], "reason": reason, "heat": self.regime.heat, "swing": swing,
                    "data": {"strategie": strategy, "werte": {k: d.get(k) for k in ("price", "mcap", "liq", "reserve", "vol_m5", "vol_h1",
                                                                                       "buys_m5", "sells_m5", "ch_m5", "ch_h1", "age_min", "dex")},
-                            "checks": checks, "punkte": parts, **({"copy": extra["info"]} if extra else {})}}
+                            "checks": checks, "punkte": parts, "marktlage": self.regime.heat, "schwankung": swing,
+                            **({"copy": extra["info"]} if extra else {})}}
             if self.trader.try_enter(a, sig, "analyst" if strategy == "scanner" else "copyfeed"):
                 self.shadow.record(strategy, mint, d["symbol"], "gekauft", reason, d, parts)
         if log_now:
@@ -203,7 +229,7 @@ class Engine:
                 continue
             d["age_min"] = (now - (d.get("created_at") or now)) / 60
             chase = (d["price"] / sg["price_usd"] - 1) * 100 if sg["price_usd"] else 999
-            n_wallets = self.copy.cluster(sg["mint"])
+            n_wallets = max(1, self.copy.cluster(sg["mint"]))   # die meldende Wallet zählt immer mit
             passing = []
             for a in accs:
                 ok, key, why = analysis.check_pre(d, a["params"])
@@ -218,7 +244,7 @@ class Engine:
             info = {"wallet": sg["wallet"], "wallet_score": sg["wallet_score"], "wallet_preis": sg["price_usd"],
                     "aufpreis_pct": round(chase, 1), "wallets_im_cluster": n_wallets, "wallet_usd": round(sg["usd"], 2)}
 
-            def account_ok(a, chase=chase, sg=sg, d=d):
+            def account_ok(a, chase=chase, sg=sg, d=d, n_wallets=n_wallets):
                 p = a["params"]
                 if chase > p["max_chase_pct"]:
                     if a["kind"] == "main":
@@ -226,10 +252,12 @@ class Engine:
                         self.s.decide("copyfeed", "SKIP", f"{a['name']}: {chase:.0f} % teurer als die Wallet (max. {p['max_chase_pct']} %)",
                                       a["id"], sg["mint"], d["symbol"])
                     return False
+                if n_wallets < p.get("min_wallets", 1):
+                    return False
                 return sg["wallet_score"] >= p["min_wallet_score"]
 
             self._evaluate(sg["mint"], d, passing, "copy", extra={
-                "score_fn": lambda an, sg=sg, n=n_wallets: min(100.0, 0.5 * an + 50 * sg["wallet_score"] + 5 * max(0, n - 1)),
+                "score_fn": lambda an, sg=sg, n=n_wallets: min(100.0, 0.5 * an + 50 * sg["wallet_score"] + 10 * max(0, n - 1)),
                 "account_ok": account_ok, "info": info,
                 "reason": f"Smart Wallet {sg['wallet'][:4]}…{sg['wallet'][-4:]} (Score {sg['wallet_score']:.2f}) kauft · "
                           f"{n_wallets} Wallet(s) · Aufpreis {chase:+.0f} %"})
@@ -288,7 +316,8 @@ class Engine:
             "offen": len(self.trader.open_positions()), "rug_blockiert": self.rug.stats["blockiert"],
             "wallets_beobachtet": self.scout.stats["beobachtet"], "copy_abfragen": self.copy.stats["abgefragt"],
             "launch_feed": {k: self.launches.stats[k] for k in ("verbunden", "neue_coins", "pro_min", "aufgenommen", "migrationen", "fehler")},
-            "schatten": self.shadow.stats,
+            "schatten": self.shadow.stats, "markt_hitze": self.regime.heat,
+            "backtest": self.backtester.progress or ("läuft" if self.backtester.running else "bereit"),
             "rug_gruende": dict(self.block_reasons.most_common(6)), "ausschluss": dict(self.skips.most_common(6)),
             "quellen": {k: f"{v['ok']} ok / {v['fehler']} Fehler" + (f" ({v['letzter_fehler']})" if v["fehler"] else "")
                         for k, v in STATS.items()},

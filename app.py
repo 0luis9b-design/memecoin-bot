@@ -245,6 +245,7 @@ def api_overview():
         accounts=[_acc_view(a) for a in accs], agents=engine.agents_status(), skips=engine.skips.most_common(8),
         open=open_pos, activity=activity, why=why, ticker=ticker[:20],
         proposals=store.val("SELECT COUNT(*) FROM proposals WHERE status='offen'", default=0),
+        regime={"heat": engine.regime.heat, "label": engine.regime.label(engine.regime.heat), "parts": engine.regime.parts},
         telegram=notify.state["status"], auth=AUTH_AKTIV)
 
 
@@ -370,9 +371,56 @@ def api_shadow():
     stats = {"erfasst": store.val("SELECT COUNT(*) FROM shadow", default=0),
              "ausgewertet": store.val("SELECT COUNT(*) FROM shadow WHERE done=1", default=0)}
     return jsonify(report=engine.shadow.report(days), stats=stats, hours=config.SHADOW_H, min_n=config.SHADOW_MIN_N,
-                   gewichte=engine.learner.weight_analysis(),
+                   gewichte=engine.learner.weight_analysis(), uhrzeit=_by_hour(),
                    launches=engine.launches.stats,
                    launch_counts={r["status"]: r["n"] for r in store.q("SELECT status, COUNT(*) n FROM launches GROUP BY status")})
+
+
+@app.get("/api/regime")
+def api_regime():
+    rows = store.q("SELECT ts, heat FROM regime WHERE ts>? ORDER BY ts", (time.time() - _hours() * 3600,))
+    return jsonify(points=[[r["ts"], r["heat"]] for r in rows], heat=engine.regime.heat, parts=engine.regime.parts,
+                   label=engine.regime.label(engine.regime.heat))
+
+
+def _by_hour():
+    """Ergebnisse nach Uhrzeit (Berlin): abgeschlossene Trades aller Konten und gekaufte Coins der Schatten-Auswertung."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo("Europe/Berlin")
+    hours = {h: {"stunde": h, "trades": 0, "gewinne": 0, "pnl": 0.0, "schatten_n": 0, "schatten_gewinner": 0} for h in range(24)}
+    for r in store.q("SELECT opened_at, proceeds, cost FROM positions WHERE status='closed' AND opened_at IS NOT NULL AND closed_at>?",
+                     (time.time() - 14 * 86400,)):
+        h = hours[datetime.fromtimestamp(r["opened_at"], tz).hour]
+        pnl = (r["proceeds"] or 0) - r["cost"]
+        h["trades"] += 1
+        h["gewinne"] += 1 if pnl > 0 else 0
+        h["pnl"] += pnl
+    for r in store.q("SELECT ts, outcome FROM shadow WHERE rule='gekauft' AND done=1 AND outcome!='unbekannt' AND ts>?",
+                     (time.time() - 14 * 86400,)):
+        h = hours[datetime.fromtimestamp(r["ts"], tz).hour]
+        h["schatten_n"] += 1
+        h["schatten_gewinner"] += 1 if r["outcome"] == "gewinner" else 0
+    for h in hours.values():
+        h["pnl"] = round(h["pnl"], 2)
+    return list(hours.values())
+
+
+@app.get("/api/backtest")
+def api_backtest():
+    runs = store.q("SELECT id, ts, status, summary FROM backtests ORDER BY id DESC LIMIT 10")
+    for r in runs:
+        r["summary"] = json.loads(r["summary"] or "{}")
+    last = store.one("SELECT results FROM backtests WHERE status='fertig' ORDER BY id DESC LIMIT 1")
+    return jsonify(runs=runs, results=json.loads(last["results"]) if last else [], running=engine.backtester.running,
+                   progress=engine.backtester.progress, labels=params.LABELS, hours=config.BACKTEST_HOURS,
+                   every_h=config.BACKTEST_EVERY_H, snapshots=store.val("SELECT COUNT(*) FROM snapshots WHERE ch_m5 IS NOT NULL", default=0))
+
+
+@app.post("/api/backtest/run")
+def api_backtest_run():
+    ok = engine.backtester.start("manuell")
+    return jsonify(ok=ok, message="gestartet" if ok else "läuft schon"), (200 if ok else 409)
 
 
 @app.get("/api/system")

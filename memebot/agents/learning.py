@@ -93,6 +93,7 @@ class Learner:
         losses = [p for p, y in samples if y == 0]
         main = next((a for a in self.t.accounts("scanner") if a["kind"] == "main"), None)
         cur = dict(WEIGHTS, **((main or {}).get("params", {}).get("weights") or {}))
+        cur = {k: cur.get(k, 0) for k in WEIGHTS}
         rep = {"beispiele": n, "gewinner": len(wins), "verlierer": len(losses), "noetig": config.WEIGHT_MIN_SAMPLES,
                "aktuell": cur, "bestandteile": {}, "neu": None}
         if n == 0:
@@ -102,7 +103,13 @@ class Learner:
             ml = sum(p.get(k, 0) for p in losses) / len(losses) if losses else 0
             rep["bestandteile"][k] = {"gewinner": round(mw, 2), "verlierer": round(ml, 2), "unterschied": round(mw - ml, 2)}
         if n >= config.WEIGHT_MIN_SAMPLES and wins and losses:
-            raw = {k: max(3.0, min(40.0, cur[k] * (1 + 2 * rep["bestandteile"][k]["unterschied"]))) for k in WEIGHTS}
+            raw = {}
+            for k in WEIGHTS:
+                diff = rep["bestandteile"][k]["unterschied"]
+                if cur.get(k, 0) > 0:
+                    raw[k] = max(3.0, min(40.0, cur[k] * (1 + 2 * diff)))
+                else:   # Beobachtungs-Merkmal: einschalten, wenn es Gewinner klar erkennt
+                    raw[k] = 8.0 if diff >= 0.1 else 0.0
             total = sum(raw.values())
             new = {k: int(round(v / total * 100)) for k, v in raw.items()}
             rep["neu"] = new
@@ -115,7 +122,7 @@ class Learner:
         if not rep.get("neu"):
             return False
         main = next(a for a in self.t.accounts("scanner") if a["kind"] == "main")
-        if max(abs(rep["neu"][k] - rep["aktuell"][k]) for k in WEIGHTS) < 2:
+        if max(abs(rep["neu"][k] - rep["aktuell"].get(k, 0)) for k in WEIGHTS) < 2:
             return False   # kaum Unterschied – kein neues Testkonto
         existing = [a for a in self.t.accounts("scanner") if a["kind"] == "test" and a["name"].startswith("Scanner · Gewichte")]
         now = time.time()

@@ -50,7 +50,7 @@ DEAD_LIQ = _f("DEAD_LIQ", 1500)                 # darunter gilt ein Coin als tot
 DEAD_AFTER_MIN = _f("DEAD_AFTER_MIN", 30)       # … aber erst ab diesem Alter
 QUIET_DEAD_MIN = _f("QUIET_DEAD_MIN", 60)       # ab diesem Alter fliegt ein Coin mit < 100 $ Volumen in 5 min raus
 HOT_VOL_M5 = _f("HOT_VOL_M5", 2000)             # ab so viel $ Volumen in 5 min wird ein Coin oft aktualisiert
-SNAPSHOT_KEEP_H = _f("SNAPSHOT_KEEP_H", 24)
+SNAPSHOT_KEEP_H = _f("SNAPSHOT_KEEP_H", 96)       # 4 Tage Kurs-Aufnahmen – Grundlage des Replay-Backtests
 
 # --- Simulation (ehrlich rechnen) ---
 FEE_PCT = _f("FEE_PCT", 1.0)                    # Börsengebühr je Kauf/Verkauf in %
@@ -72,6 +72,12 @@ LAUNCH_MIN_MCAP = _f("LAUNCH_MIN_MCAP", 12000)
 SHADOW_H = _f("SHADOW_H", 2)                    # so lange werden abgelehnte Coins weiterverfolgt
 SHADOW_MIN_N = _i("SHADOW_MIN_N", 30)           # ab so vielen ausgewerteten Coins gibt es eine Einschätzung
 WEIGHT_MIN_SAMPLES = _i("WEIGHT_MIN_SAMPLES", 100)   # ab so vielen Beispielen lernt der Analyst neue Gewichte
+
+# --- Replay-Backtest ---
+BACKTEST_HOURS = _f("BACKTEST_HOURS", 72)          # so viel Vergangenheit wird abgespielt
+BACKTEST_VARIANTS = _i("BACKTEST_VARIANTS", 120)   # so viele neue Regelsätze je Lauf
+BACKTEST_MIN_TRADES = _i("BACKTEST_MIN_TRADES", 15)
+BACKTEST_EVERY_H = _f("BACKTEST_EVERY_H", 12)
 
 # --- Quellen ---
 SOLANA_RPC_URL = os.environ.get("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com").strip()

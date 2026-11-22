@@ -69,3 +69,8 @@ button.act.no{background:#2a1418;color:var(--red);border-color:#4a1f26}
 .bar{height:6px;background:#1b232b;border-radius:3px;overflow:hidden}.bar i{display:block;height:100%;background:var(--green)}
 footer{text-align:center;padding:20px}
 .empty{color:var(--muted);padding:10px 0}
+.heat{font:800 44px var(--mono)}.heat.kalt{color:var(--blue)}.heat.normal{color:var(--yellow)}.heat.heiß{color:var(--orange)}
+.hbar{display:flex;align-items:flex-end;gap:3px;height:90px}.hbar div{flex:1;background:#1b232b;border-radius:3px 3px 0 0;position:relative;min-height:2px}
+.hbar div.pos{background:#1f6b3e}.hbar div.neg{background:#6b1f2a}
+@media(max-width:820px){.grid2[style]{grid-template-columns:1fr!important}}
+.tbl td:not(:last-child){white-space:nowrap}

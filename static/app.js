@@ -80,6 +80,10 @@ async function loadOverview() {
       </div>
     </div>`).join("");
 
+  const R = o.regime;
+  $("#heatBox").innerHTML = R.heat == null ? `<div class="empty">wird in 5 min gemessen</div>` :
+    `<div class="heat ${esc(R.label)}">${Math.round(R.heat)}</div><div><b>${esc(R.label)}</b></div>
+     <div class="small muted">${Object.entries(R.parts || {}).map(([k, v]) => `${esc(k.replace(/_/g, " "))}: ${v.wert ?? "–"}`).join("<br>")}</div>`;
   $("#pipeline").innerHTML = o.agents.map((g) => `
     <div class="agent" style="--c:${AGENT_COLORS[g.id] || "#4cc3ff"}">
       <div class="n">${esc(g.name)}</div><div class="v">${(g.wert ?? 0).toLocaleString("de-DE")}</div>
@@ -119,6 +123,11 @@ function whyHtml(w) {
 }
 
 // ------------------------------------------------------------------ Kontostand-Chart
+async function loadHeat() {
+  const r = await api("/api/regime?hours=48");
+  drawLines($("#heatChart"), [{ name: "Hitze", pts: r.points, color: "#ff9f43", width: 2.2, base: 30, unit: "" }]);
+}
+
 async function loadEquity() {
   const data = await api("/api/equity?hours=" + eqHours);
   const showTests = $("#eqTests").checked;
@@ -148,7 +157,7 @@ function drawLines(cv, series) {
   const X = (t) => L + (x1 === x0 ? 0 : (t - x0) / (x1 - x0)) * (w - L - R);
   const Y = (v) => T + (1 - (v - y0) / (y1 - y0)) * (h - T - B);
   c.font = "11px ui-monospace,monospace"; c.fillStyle = "#8695a3"; c.strokeStyle = "#1f2830"; c.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) { const v = y0 + (y1 - y0) * i / 4, y = Y(v); c.beginPath(); c.moveTo(L, y); c.lineTo(w - R, y); c.stroke(); c.fillText("$" + Math.round(v), 2, y + 4); }
+  for (let i = 0; i <= 4; i++) { const v = y0 + (y1 - y0) * i / 4, y = Y(v); c.beginPath(); c.moveTo(L, y); c.lineTo(w - R, y); c.stroke(); c.fillText((series[0] && series[0].unit !== undefined ? "" : "$") + Math.round(v), 2, y + 4); }
   const nx = w < 520 ? 1 : 3;
   for (let i = 0; i <= nx; i++) { const t = x0 + (x1 - x0) * i / nx, lab = dt(t), lw = c.measureText(lab).width; c.fillText(lab, Math.max(L, Math.min(w - R - lw, X(t) - lw / 2)), h - 5); }
   series.forEach((s) => {
@@ -241,9 +250,10 @@ async function loadLog() {
 async function loadWallets() {
   const w = await api("/api/wallets");
   $("#walletInfo").textContent = `Scout: ${w.scout.coins_gesammelt} Coins gesammelt, ${w.scout.trades} Trades, ${w.scout.wallets_bewertet} Wallets bewertet · beobachtet ab ${w.min_tokens} Coins und Score ≥ ${w.min_score} · Copy-Feed: ${w.feed.abgefragt} Abfragen` + (w.feed.fehler ? ` · letzter Fehler: ${w.feed.fehler}` : "");
-  $("#wallets").innerHTML = w.wallets.length ? `<div class="tbl"><table><tr><th>Wallet</th><th>Score</th><th>Coins</th><th>Treffer</th><th>Fehlgriffe</th><th>G/V (geschätzt)</th><th></th></tr>` +
+  $("#wallets").innerHTML = w.wallets.length ? `<div class="tbl"><table><tr><th>Wallet</th><th>Score</th><th>Coins</th><th>Treffer</th><th>Fehlgriffe</th><th>G/V (geschätzt)</th><th>unsere Kopien</th><th></th></tr>` +
     w.wallets.slice(0, 120).map((x) => `<tr><td class="mono"><a href="https://solscan.io/account/${encodeURIComponent(x.address)}" target="_blank" rel="noopener" style="color:var(--blue)">${short(x.address)}</a></td>
       <td class="mono">${(x.score ?? 0).toFixed(2)}</td><td>${x.tokens}</td><td class="pos">${x.hits}</td><td class="neg">${x.misses}</td><td class="${cls(x.pnl_usd)}">${sgn(x.pnl_usd, 0)}</td>
+      <td class="${cls(x.copy_pnl)}">${x.copy_trades ? `${x.copy_wins}/${x.copy_trades} · ${sgn(x.copy_pnl)}` : "–"}</td>
       <td>${x.tracked ? '<span class="tag open">beobachtet</span>' : x.note ? `<span class="tag CANCEL">${esc(x.note)}</span>` : ""}</td></tr>`).join("") + `</table></div>`
     : `<div class="empty">Der Scout sammelt noch Daten. Eine Wallet braucht mindestens ${w.min_tokens} bewertete Coins (Ergebnis frühestens 30 min nach dem Kauf).</div>`;
   $("#copyFeed").innerHTML = w.recent.length ? `<div class="feed">` + w.recent.map((t) => `<div class="it"><div class="t">${tm(t.ts)}</div><div><span class="tag ${t.kind === "buy" ? "ENTER" : "EXIT"}">${t.kind === "buy" ? "KAUF" : "VERKAUF"}</span>
@@ -300,12 +310,46 @@ async function loadShadow() {
     ${G.neu ? "Neue Gewichte berechnet – der Lern-Agent testet sie im Testkonto „Scanner · Gewichte“. Das Hauptkonto ändert sich nur nach deiner Freigabe." : `Neue Gewichte ab ${G.noetig} Beispielen.`}
     Werte 0–1: wie stark der Bestandteil im Schnitt bei Gewinnern bzw. Verlierern ausgeprägt war.</div>
     <div class="tbl"><table><tr><th>Bestandteil</th><th>Gewicht jetzt</th><th>Ø Gewinner</th><th>Ø Verlierer</th><th>Unterschied</th><th>gelernt</th></tr>${rows}</table></div>`;
+  const H = S.uhrzeit, maxAbs = Math.max(1, ...H.map((h) => Math.abs(h.pnl)));
+  $("#hours").innerHTML = `<div class="small muted" style="margin-bottom:6px">Balken = Gewinn/Verlust aller abgeschlossenen Trades (alle Konten), die in dieser Stunde eröffnet wurden. Darunter: Trades · Treffer.</div>
+    <div class="hbar">${H.map((h) => `<div class="${h.pnl > 0 ? "pos" : h.pnl < 0 ? "neg" : ""}" style="height:${Math.max(2, Math.abs(h.pnl) / maxAbs * 90)}px" title="${h.stunde} Uhr: ${sgn(h.pnl)} · ${h.trades} Trades · ${h.trades ? Math.round(h.gewinne / h.trades * 100) : 0} % Treffer · Schatten ${h.schatten_n ? Math.round(h.schatten_gewinner / h.schatten_n * 100) + " % Gewinner" : "–"}"></div>`).join("")}</div>
+    <div class="row small muted" style="justify-content:space-between;margin-top:4px">${[0, 3, 6, 9, 12, 15, 18, 21, 23].map((h) => `<span>${h}</span>`).join("")}</div>
+    <div class="tbl" style="margin-top:8px"><table><tr><th>Uhrzeit</th><th>Trades</th><th>Treffer</th><th>G/V</th><th>Schatten: Käufe → Gewinner</th></tr>
+    ${H.filter((h) => h.trades || h.schatten_n).map((h) => `<tr><td>${h.stunde}–${h.stunde + 1} Uhr</td><td>${h.trades}</td><td>${h.trades ? Math.round(h.gewinne / h.trades * 100) + " %" : "–"}</td>
+      <td class="${cls(h.pnl)}">${sgn(h.pnl)}</td><td>${h.schatten_n ? `${h.schatten_n} → ${Math.round(h.schatten_gewinner / h.schatten_n * 100)} %` : "–"}</td></tr>`).join("")}</table></div>`;
   const L = S.launches, c = S.launch_counts;
   $("#launchInfo").innerHTML = `<div class="kv"><div>Verbindung</div><div>${L.verbunden ? '<span class="pos">● live</span>' : '<span class="neg">● getrennt</span>'} · Neustarts ${L.neustarts}${L.fehler ? ` · <span class="neg">${esc(L.fehler)}</span>` : ""}</div>
     <div>Neue Coins</div><div>${L.neue_coins} seit Start · zuletzt ${L.pro_min}/min · letzte Nachricht vor ${ago(L.letzte_nachricht)}</div>
     <div>Nachprüfung</div><div>${c.neu || 0} warten · ${c.aufgenommen || 0} lebendig → Beobachtungsliste · ${c.verworfen || 0} verworfen (letzte 3 Tage)</div>
     <div>Migrationen</div><div>${L.migrationen} gesehen (Wechsel von der Pump.fun-Kurve zu PumpSwap)</div></div>
     <div class="small muted" style="margin-top:6px">Kostenloser PumpPortal-Stream. Er liefert nur neue Coins und Migrationen; Trades einzelner Coins kosten dort Gebühren und werden nicht genutzt.</div>`;
+}
+
+// ------------------------------------------------------------------ Backtest
+$("#btRun").addEventListener("click", async () => {
+  try { await api("/api/backtest/run", { method: "POST", body: "{}" }); } catch (e) { alert("Läuft schon oder Fehler: " + e.message); }
+  setTimeout(loadBacktest, 1500);
+});
+const mstat = (m) => `<td class="${cls(m.rendite)}">${pct(m.rendite)}</td><td>${m.trades}</td><td>${m.treffer ?? "–"} %</td><td>${m.pf ?? "–"}</td><td>${m.max_dd ? "−" + m.max_dd : 0} %</td>`;
+async function loadBacktest() {
+  const B = await api("/api/backtest");
+  const last = B.runs[0];
+  $("#btRun").disabled = B.running;
+  $("#btInfo").innerHTML = `Spielt die gespeicherten Kurs-Aufnahmen der letzten ${B.hours} h mit vielen Regelsätzen erneut ab – mit denselben Regeln, Gebühren und Verzögerungen wie live.
+    Ausgewählt wird auf den ersten 70 % der Zeit (<b>Train</b>), geprüft auf den letzten 30 % (<b>Test</b>). <b>Robust</b> = besser als das Hauptkonto in beiden Zeiträumen,
+    im Test mind. +5 %-Punkte und Profit-Faktor ≥ 1. Der beste robuste Regelsatz wird ein Testkonto „Scanner · Replay“ (höchstens eins alle 2 Tage); ins Hauptkonto kommt nichts ohne deine Freigabe.
+    Läuft automatisch alle ${B.every_h} h. Grenzen: Rug-Check mit dem letzten bekannten Bericht, Ausstiege nur an den aufgenommenen Punkten, nur Scanner-Strategie.
+    <br>Aufnahmen mit allen Werten: ${B.snapshots.toLocaleString("de-DE")} · ${B.running ? `<b>läuft: ${esc(B.progress)}</b>` : last ? `letzter Lauf ${dt(last.ts)} (${esc(last.status)})` : "noch kein Lauf"}`;
+  const R = B.results;
+  $("#btResults").innerHTML = R.length ? `<div class="tbl"><table><tr><th>Regelsatz</th><th colspan="5">Train</th><th colspan="5">Test</th><th>vs. Haupt</th><th>Änderungen</th></tr>
+    <tr><th></th><th>Rendite</th><th>Trades</th><th>Treffer</th><th>PF</th><th>Max DD</th><th>Rendite</th><th>Trades</th><th>Treffer</th><th>PF</th><th>Max DD</th><th>Test</th><th></th></tr>
+    ${R.map((r, i) => `<tr style="${i === 0 ? "background:#0f1d16" : ""}"><td><b>${esc(r.name)}</b> ${r.robust && r.art === "neu" ? '<span class="tag PARTIAL">robust</span>' : ""}${r.art === "live" && i ? ' <span class="tag">läuft live</span>' : ""}</td>
+      ${mstat(r.train)}${mstat(r.test)}<td class="${cls(r.besser_im_test)}">${i ? pct(r.besser_im_test) : "–"}</td>
+      <td class="small muted">${Object.entries(r.aenderungen).map(([k, [a, b]]) => `${esc(B.labels[k] || k)}: ${esc(fmtVal(a) ?? "–")}→${esc(fmtVal(b))}`).join(" · ") || "–"}</td></tr>`).join("")}</table></div>`
+    : `<div class="empty">Noch kein Ergebnis. Der erste automatische Lauf startet, sobald genug Aufnahmen da sind – oder starte ihn oben von Hand.</div>`;
+  $("#btRuns").innerHTML = B.runs.map((r) => `<div class="small"><span class="muted">${dt(r.ts)}</span> <b>${esc(r.status)}</b> ·
+    ${r.summary.fehler ? esc(r.summary.fehler) : `${r.summary.regelsaetze} Regelsätze · ${r.summary.coins} Coins · ${r.summary.kandidaten} Kandidaten · ${r.summary.stunden} h · ${r.summary.dauer_s} s · ${r.summary.robust} robust${r.summary.testkonto ? " · neues Testkonto " + esc(r.summary.testkonto) : ""}`}</div>`).join("") || `<div class="empty">–</div>`;
+  if (B.running) { clearTimeout(timer); timer = setTimeout(refresh, 5000); }
 }
 
 // ------------------------------------------------------------------ System
@@ -326,7 +370,8 @@ async function loadSystem() {
 async function refresh() {
   clearTimeout(timer);
   try {
-    if (tab === "overview") { await loadOverview(); await loadEquity(); }
+    if (tab === "overview") { await loadOverview(); await loadEquity(); await loadHeat(); }
+    else if (tab === "backtest") await loadBacktest();
     else if (tab === "trades") await loadTrades();
     else if (tab === "log") await loadLog();
     else if (tab === "wallets") await loadWallets();

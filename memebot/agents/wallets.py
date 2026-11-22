@@ -5,6 +5,7 @@ Scout     sammelt die Trades frischer Coins (GeckoTerminal) und rechnet für jed
           Bots (sehr viele Trades in einem Coin), Kleinstbeträge und Wallets, die überall dabei sind, fliegen raus.
 Copy-Feed fragt die beobachteten Wallets über den öffentlichen Solana-Zugang ab und meldet neue Käufe/Verkäufe.
 """
+import json
 import logging
 import time
 from collections import defaultdict
@@ -85,21 +86,29 @@ class Scout:
                 w_["hits"] += 1
             elif mult < 1:
                 w_["misses"] += 1
+        copies = self.copy_results()
         rows = []
         for w, x in wallets.items():
             everywhere = mints_total >= 10 and presence[w] / mints_total > 0.5
             if x["tokens"] == 0:
                 continue
-            sc = (x["hits"] + 1) / (x["tokens"] + 3)
+            base = (x["hits"] + 1) / (x["tokens"] + 3)
             if x["pnl"] < 0:
-                sc *= 0.7
+                base *= 0.7
+            note = None
             if x["bot"] or everywhere:
-                sc = 0.0
-            rows.append((w, x["tokens"], x["hits"], x["misses"], round(x["pnl"], 2), round(sc, 3), now, now,
-                         "Bot/überall dabei" if (x["bot"] or everywhere) else None))
-        self.s.many("""INSERT INTO wallets(address,tokens,hits,misses,pnl_usd,score,added_at,updated,note) VALUES(?,?,?,?,?,?,?,?,?)
+                base, note = 0.0, "Bot/überall dabei"
+            sc, cnote = self.adjust(base, copies.get(w))
+            note = note or cnote
+            c = copies.get(w) or {"n": 0, "wins": 0, "pnl": 0.0}
+            rows.append((w, x["tokens"], x["hits"], x["misses"], round(x["pnl"], 2), round(sc, 3), now, now, note,
+                         round(base, 3), c["n"], c["wins"], round(c["pnl"], 2)))
+        self.s.many("""INSERT INTO wallets(address,tokens,hits,misses,pnl_usd,score,added_at,updated,note,base_score,copy_trades,copy_wins,copy_pnl)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
                        ON CONFLICT(address) DO UPDATE SET tokens=excluded.tokens, hits=excluded.hits, misses=excluded.misses,
-                       pnl_usd=excluded.pnl_usd, score=excluded.score, updated=excluded.updated, note=excluded.note""", rows)
+                       pnl_usd=excluded.pnl_usd, score=excluded.score, updated=excluded.updated, note=excluded.note,
+                       base_score=excluded.base_score, copy_trades=excluded.copy_trades, copy_wins=excluded.copy_wins,
+                       copy_pnl=excluded.copy_pnl""", rows)
         # Beobachtungsliste: die besten Wallets mit genug Coins
         best = self.s.q("SELECT address FROM wallets WHERE tokens>=? AND score>=? ORDER BY score DESC, pnl_usd DESC LIMIT ?",
                         (config.WALLET_MIN_TOKENS, config.WALLET_MIN_SCORE, config.WALLETS_TRACK_MAX))
@@ -113,6 +122,37 @@ class Scout:
         self.stats["wallets_bewertet"] = len(rows)
         self.stats["beobachtet"] = len(keep)
         return len(keep)
+
+
+    def copy_results(self):
+        """Wie liefen UNSERE Kopien je Wallet? (abgeschlossene Positionen aller Copy-Konten)"""
+        out = defaultdict(lambda: {"n": 0, "wins": 0, "pnl": 0.0, "pct": 0.0})
+        rows = self.s.q("""SELECT p.signal, p.proceeds, p.cost FROM positions p JOIN accounts a ON a.id=p.account_id
+                           WHERE a.strategy='copy' AND p.status='closed' AND p.closed_at>?""", (time.time() - 14 * 86400,))
+        for r in rows:
+            try:
+                w = ((json.loads(r["signal"] or "{}") or {}).get("copy") or {}).get("wallet")
+            except ValueError:
+                w = None
+            if not w or not r["cost"]:
+                continue
+            pnl = (r["proceeds"] or 0) - r["cost"]
+            x = out[w]
+            x["n"] += 1
+            x["wins"] += 1 if pnl > 0 else 0
+            x["pnl"] += pnl
+            x["pct"] += pnl / r["cost"] * 100
+        return dict(out)
+
+    @staticmethod
+    def adjust(base, c):
+        """Score nach unseren Kopier-Ergebnissen anpassen. Ab 5 Kopien mit Verlust und < 30 % Treffern: nicht mehr folgen."""
+        if not c or c["n"] < 3:
+            return base, None
+        avg = c["pct"] / c["n"]
+        if c["n"] >= 5 and c["pnl"] < 0 and c["wins"] / c["n"] < 0.3:
+            return 0.0, f"Kopien verlieren ({c['wins']}/{c['n']} Treffer)"
+        return base * max(0.3, min(1.5, 1 + avg / 50)), None
 
 
 # ---------------------------------------------------------------- Transaktion lesen

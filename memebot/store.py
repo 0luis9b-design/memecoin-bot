@@ -54,7 +54,21 @@ CREATE TABLE IF NOT EXISTS shadow (
   done INTEGER DEFAULT 0, max_gain REAL, final REAL, outcome TEXT);
 CREATE INDEX IF NOT EXISTS shadow_open ON shadow(done, mint);
 CREATE INDEX IF NOT EXISTS shadow_rule ON shadow(rule, done);
+CREATE INDEX IF NOT EXISTS snap_ts ON snapshots(ts);
+CREATE TABLE IF NOT EXISTS regime (ts REAL PRIMARY KEY, heat REAL, data TEXT);
+CREATE TABLE IF NOT EXISTS backtests (id INTEGER PRIMARY KEY, ts REAL, status TEXT, summary TEXT, results TEXT);
 """
+
+# Spalten, die nach v1.0 dazugekommen sind (bestehende Datenbanken werden beim Start ergänzt)
+NEW_COLUMNS = {
+    "snapshots": {"ch_m5": "REAL", "ch_h1": "REAL", "vol_h1": "REAL", "reserve": "REAL", "boosts": "INTEGER", "socials": "INTEGER"},
+    "positions": {"stop_pct": "REAL", "flow_hits": "INTEGER DEFAULT 0"},
+    "wallets": {"copy_trades": "INTEGER DEFAULT 0", "copy_wins": "INTEGER DEFAULT 0", "copy_pnl": "REAL DEFAULT 0",
+                "base_score": "REAL"},
+    "tokens": {"holders_first": "INTEGER", "holders_first_at": "REAL"},
+}
+SNAP_COLS = ("mint", "ts", "price", "mcap", "liq", "vol_m5", "buys_m5", "sells_m5", "ch_m5", "ch_h1", "vol_h1", "reserve",
+             "boosts", "socials")
 
 
 class Store:
@@ -70,6 +84,11 @@ class Store:
             self.db.execute("PRAGMA journal_mode=WAL")
             self.db.execute("PRAGMA synchronous=NORMAL")
             self.db.executescript(SCHEMA)
+            for table, cols in NEW_COLUMNS.items():
+                have = {r[1] for r in self.db.execute(f"PRAGMA table_info({table})")}
+                for col, typ in cols.items():
+                    if col not in have:
+                        self.db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
             self.db.commit()
 
     # --- Grundfunktionen
@@ -131,3 +150,5 @@ class Store:
         self.x("DELETE FROM events WHERE ts<?", (time.time() - 14 * 86400,))
         self.x("DELETE FROM launches WHERE ts<?", (time.time() - 3 * 86400,))
         self.x("DELETE FROM shadow WHERE ts<?", (time.time() - 30 * 86400,))
+        self.x("DELETE FROM regime WHERE ts<?", (time.time() - 30 * 86400,))
+        self.x("DELETE FROM backtests WHERE id NOT IN (SELECT id FROM backtests ORDER BY id DESC LIMIT 20)")

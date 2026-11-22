@@ -10,6 +10,7 @@ import time
 
 from .. import config, market
 from ..sources import SourceError
+from ..store import SNAP_COLS
 
 log = logging.getLogger("memebot.scanner")
 
@@ -165,12 +166,13 @@ class Scanner:
                         first_price=COALESCE(first_price, ?) WHERE mint=?""",
                      (json.dumps(d), now, d["price"], d["price"], d["price"], d["price"], hot, status,
                       d["symbol"], d["name"], d["price"], t["mint"]))
-            snaps.append((t["mint"], now, d["price"], d["mcap"], d["liq"] or d["reserve"] * 2, d["vol_m5"], d["buys_m5"], d["sells_m5"]))
+            snaps.append((t["mint"], now, d["price"], d["mcap"], d["liq"] or d["reserve"] * 2, d["vol_m5"], d["buys_m5"], d["sells_m5"],
+                          d["ch_m5"], d["ch_h1"], d["vol_h1"], d["reserve"], d.get("boosts", 0), d.get("socials", 0)))
             d["age_min"] = age_min
             d["source"] = t["source"]
             updated[t["mint"]] = d
         if snaps:
-            self.s.many("INSERT INTO snapshots VALUES(?,?,?,?,?,?,?,?)", snaps)
+            self.s.many("INSERT INTO snapshots(%s) VALUES(%s)" % (",".join(SNAP_COLS), ",".join("?" * len(SNAP_COLS))), snaps)
         return updated
 
     def history(self, mint, minutes=30):

@@ -95,7 +95,13 @@ class RugGuard:
                 self.stats["fehler"] = str(e)
                 return None
             self.stats["geprueft"] += 1
-            self.s.x("UPDATE tokens SET rug=?, rug_at=? WHERE mint=?", (json.dumps(r), time.time(), mint))
+            now = time.time()
+            first = self.s.one("SELECT holders_first, holders_first_at FROM tokens WHERE mint=?", (mint,)) or {}
+            if not first.get("holders_first"):
+                self.s.x("UPDATE tokens SET holders_first=?, holders_first_at=? WHERE mint=?", (r["holders"], now, mint))
+            elif now - first["holders_first_at"] >= 300:
+                r["holder_growth_h"] = round((r["holders"] - first["holders_first"]) / ((now - first["holders_first_at"]) / 3600), 1)
+            self.s.x("UPDATE tokens SET rug=?, rug_at=? WHERE mint=?", (json.dumps(r), now, mint))
         # Wie viele Coins hat der Ersteller in den letzten 24 h gestartet? (eigener Live-Stream von Pump.fun)
         if r.get("creator"):
             n = self.s.val("SELECT COUNT(*) FROM launches WHERE creator=? AND ts>?", (r["creator"], time.time() - 86400), 0)
@@ -144,7 +150,9 @@ def _lin(x, lo, hi):
 
 
 WEIGHTS = {"momentum": 20, "kaufdruck": 20, "beschleunigung": 15, "aktivitaet": 10, "liquiditaet": 10,
-           "sicherheit": 15, "chart": 10}
+           "sicherheit": 15, "chart": 10,
+           # Beobachtungs-Merkmale: zählen erst, wenn der Lern-Agent eine Wirkung findet und ihnen ein Gewicht gibt
+           "kein_boost": 0, "holder_wachstum": 0}
 
 
 def chart_score(hist, price):
@@ -188,6 +196,10 @@ def components(d, hist, rug):
     else:
         parts["sicherheit"] = (0.3, "kein Bericht")
     parts["chart"] = chart_score(hist, d["price"])
+    boosts = d.get("boosts") or 0
+    parts["kein_boost"] = (0.0 if boosts else 1.0, f"{boosts} DexScreener-Boosts" if boosts else "kein bezahlter Boost")
+    g = (rug or {}).get("holder_growth_h")
+    parts["holder_wachstum"] = (_lin(g, 0, 300), f"+{g:.0f} Holder/h") if g is not None else (0.5, "noch kein Verlauf")
     return parts
 
 

@@ -24,6 +24,7 @@
     <button data-tab="wallets">Wallets</button>
     <button data-tab="learning">Lernen <span id="propBadge" class="pill hide"></span></button>
     <button data-tab="shadow">Auswertung</button>
+    <button data-tab="backtest">Backtest</button>
     <button data-tab="system">System</button>
   </nav>
 </header>
@@ -38,6 +39,10 @@
     </div>
     <canvas id="eqChart" height="220" style="height:220px"></canvas>
     <label class="small"><input type="checkbox" id="eqTests"> Testkonten einblenden</label>
+  </div>
+  <div class="card">
+    <div class="row between wrap gap"><h2>Marktlage</h2><span class="small muted">0 = tot · 100 = Hype · alle 5 min</span></div>
+    <div class="grid2" style="grid-template-columns:240px 1fr"><div id="heatBox"></div><canvas id="heatChart" height="120" style="height:120px"></canvas></div>
   </div>
   <div class="card">
     <div class="row between"><h2>Agenten-Pipeline</h2><span class="small muted">launch-feed + scanner → rug check → analyst → sizer → executor → risk → logger · scout → copy-feed · lernen + schatten</span></div>
@@ -88,7 +93,15 @@
     <div class="seg" id="shDays"><button data-d="1">1 Tag</button><button data-d="7" class="on">7 Tage</button><button data-d="30">30 Tage</button></div></div>
     <div id="shInfo" class="small muted"></div><div id="shadowTables"></div></div>
   <div class="card"><h2>Analyst lernt seine Gewichtung</h2><div id="weights"></div></div>
+  <div class="card"><h2>Ergebnisse nach Uhrzeit (Berlin, 14 Tage)</h2><div id="hours"></div></div>
   <div class="card"><h2>Launch-Feed · neue Pump.fun-Coins live</h2><div id="launchInfo"></div></div>
+</section>
+
+<section id="tab-backtest" class="tab">
+  <div class="card"><div class="row between wrap gap"><h2>Replay-Backtest</h2><button class="act" id="btRun">Backtest jetzt starten</button></div>
+    <div id="btInfo" class="small muted"></div></div>
+  <div class="card"><h2>Ergebnisse des letzten Laufs</h2><div id="btResults"></div></div>
+  <div class="card"><h2>Letzte Läufe</h2><div id="btRuns"></div></div>
 </section>
 
 <section id="tab-system" class="tab">

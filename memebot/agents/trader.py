@@ -8,7 +8,7 @@ Risk      Stop-Loss, Teilverkauf, Trailing-Stop, Höchst-Haltedauer, Rug-Alarm (
 import json
 import time
 
-from .. import config, notify, sim
+from .. import config, notify, params, rules, sim
 from ..notify import esc
 
 MAX_FILL_DRIFT_PCT = 25     # Kurs bis zur Ausführung um mehr als 25 % gestiegen -> Order verwerfen
@@ -41,7 +41,8 @@ class Trader:
             args.append(strategy)
         rows = self.s.q(sql + " ORDER BY kind DESC, id", args)
         for a in rows:
-            a["params"] = json.loads(a["params"])
+            # neue Regeln aus späteren Versionen bekommen ihren Standardwert (alte Konten verhalten sich dadurch wie vorher)
+            a["params"] = dict(params.defaults(a["strategy"]), **json.loads(a["params"]))
         return rows
 
     def open_positions(self, account_id=None):
@@ -56,11 +57,10 @@ class Trader:
         return acc["cash"] + sum((p["value"] or 0) if p["status"] == "open" else p["budget"] for p in pos)
 
     # ------------------------------------------------------------ Sizer + Order
-    def size(self, acc, score, reserve):
+    def size(self, acc, score, reserve, heat=None):
         p = acc["params"]
         eq = self.equity(acc)
-        span = max(1.0, 100 - p["min_score"])
-        pct = p["size_min_pct"] + (p["size_max_pct"] - p["size_min_pct"]) * max(0.0, min(1.0, (score - p["min_score"]) / span))
+        pct = rules.size_pct(p, score) * (rules.regime_mult(p, heat) or 0)
         usd = eq * pct / 100
         limit_impact = sim.max_usd_for_impact(p["max_impact_pct"], reserve)
         exposure = eq - acc["cash"]
@@ -81,7 +81,10 @@ class Trader:
                           (acc["id"], sig["mint"]))
         if last and time.time() - last < p["reentry_min"] * 60:
             return None
-        usd, pct, limit_impact = self.size(acc, sig["score"], sig["reserve"])
+        if rules.regime_mult(p, sig.get("heat")) is None:
+            self._skip(agent, acc, sig, f"Markt zu kalt (Hitze {sig.get('heat'):.0f} < {p.get('regime_pause_heat')})")
+            return None
+        usd, pct, limit_impact = self.size(acc, sig["score"], sig["reserve"], sig.get("heat"))
         if usd < 5:
             why = "Kasse/Marktanteil ausgeschöpft" if limit_impact >= 5 else "Pool zu klein für einen sinnvollen Einsatz"
             self._skip(agent, acc, sig, why)
@@ -89,12 +92,13 @@ class Trader:
         now = time.time()
         self.s.x("UPDATE accounts SET cash=cash-? WHERE id=?", (usd, acc["id"]))
         acc["cash"] -= usd
+        stop = rules.stop_for(p, sig.get("swing"))
         cur = self.s.x("""INSERT INTO positions(account_id,mint,pool,symbol,dex,status,created,budget,cost,qty,qty_left,
-                          entry_price,market_entry,peak_price,last_price,value,score,reason_in,signal,entry_liq)
-                          VALUES(?,?,?,?,?,'pending',?,?,?,0,0,0,?,0,?,0,?,?,?,?)""",
+                          entry_price,market_entry,peak_price,last_price,value,score,reason_in,signal,entry_liq,stop_pct)
+                          VALUES(?,?,?,?,?,'pending',?,?,?,0,0,0,?,0,?,0,?,?,?,?,?)""",
                        (acc["id"], sig["mint"], sig["pool"], sig["symbol"], sig["dex"], now, usd, usd, sig["price"],
                         sig["price"], sig["score"], sig["reason"][:300], json.dumps(sig.get("data"), default=str)[:8000],
-                        sig["reserve"]))
+                        sig["reserve"], stop))
         self.stats["orders"] += 1
         self.s.decide("sizer", "ORDER", f"{acc['name']}: {usd:.2f} $ ({usd / max(1e-9, self.equity(acc)) * 100:.1f} % vom Konto, "
                       f"Ziel {pct:.1f} %) bei Punktzahl {sig['score']:.0f}", acc["id"], sig["mint"], sig["symbol"],
@@ -165,23 +169,17 @@ class Trader:
         price = d["price"]
         peak = max(pos["peak_price"] or 0, price)
         value, _, _ = sim.sell(pos["qty_left"], price, d["reserve"])
-        self.s.x("UPDATE positions SET last_price=?, peak_price=?, value=? WHERE id=?", (price, peak, value, pos["id"]))
-        pos.update(last_price=price, peak_price=peak, value=value)
-        ent = pos["market_entry"]
-        gain = (price / ent - 1) * 100
-        held = (now - pos["opened_at"]) / 60
-        if pos["entry_liq"] and d["reserve"] < pos["entry_liq"] * 0.3:
-            return self.exit(pos, acc, 1.0, d, f"Rug-Alarm: Liquidität von {pos['entry_liq']:,.0f} $ auf {d['reserve']:,.0f} $ eingebrochen")
-        if gain <= -p["stop_pct"]:
-            return self.exit(pos, acc, 1.0, d, f"Stop-Loss bei {gain:+.1f} % (Grenze −{p['stop_pct']} %)")
-        if not pos["tp1_done"] and gain >= p["tp1_pct"]:
-            self.exit(pos, acc, p["tp1_sell_pct"] / 100, d, f"Teilverkauf {p['tp1_sell_pct']} % bei {gain:+.0f} %", partial=True)
+        st = {"market_entry": pos["market_entry"], "peak_price": peak, "opened_at": pos["opened_at"], "tp1_done": pos["tp1_done"],
+              "entry_liq": pos["entry_liq"], "stop_pct": pos.get("stop_pct"), "flow_since": pos.get("flow_hits") or 0}
+        action, frac, reason, flow_since = rules.exit_decision(p, st, price, d["reserve"], d.get("buys_m5", 0), d.get("sells_m5", 0), now)
+        self.s.x("UPDATE positions SET last_price=?, peak_price=?, value=?, flow_hits=? WHERE id=?",
+                 (price, peak, value, int(flow_since or 0), pos["id"]))
+        pos.update(last_price=price, peak_price=peak, value=value, flow_hits=int(flow_since or 0))
+        if action == "partial":
+            self.exit(pos, acc, frac, d, reason, partial=True)
             return True
-        peak_gain = (peak / ent - 1) * 100
-        if peak_gain >= p["trail_start_pct"] and price <= peak * (1 - p["trail_pct"] / 100):
-            return self.exit(pos, acc, 1.0, d, f"Trailing-Stop: {p['trail_pct']} % unter Hoch (+{peak_gain:.0f} %), jetzt {gain:+.0f} %")
-        if held >= p["max_hold_min"]:
-            return self.exit(pos, acc, 1.0, d, f"Höchst-Haltedauer {p['max_hold_min']} min erreicht ({gain:+.0f} %)")
+        if action == "exit":
+            return self.exit(pos, acc, 1.0, d, reason)
         return False
 
     def exit(self, pos, acc, fraction, d, reason, partial=False, agent="risk"):
