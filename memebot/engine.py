@@ -90,6 +90,8 @@ class Engine:
             self.learner.run()
         if self._due("cleanup", 3600):
             self.s.cleanup(config.SNAPSHOT_KEEP_H)
+        if self._due("statuslog", 300):
+            self.log_status()
         self.daily_report()
         self.state["cycles"] += 1
         self.state["last_cycle"] = time.time()
@@ -234,6 +236,21 @@ class Engine:
                 d = self._token_now(sg["mint"])
                 if d:
                     self.trader.exit(pos, a, 1.0, d, f"Smart Wallet {sg['wallet'][:4]}… verkauft – wir verkaufen mit", agent="copyfeed")
+
+    def summary(self):
+        """Kurzer Zustand ohne Geheimnisse – für das Log und /health."""
+        from .sources import STATS
+        return {
+            "beobachtet": self.scanner.stats["beobachtet"], "pools_gesehen": self.scanner.stats["pools_gesehen"],
+            "bewertet": self.analyst["bewertet"], "orders": self.trader.stats["orders"],
+            "offen": len(self.trader.open_positions()), "rug_blockiert": self.rug.stats["blockiert"],
+            "wallets_beobachtet": self.scout.stats["beobachtet"], "copy_abfragen": self.copy.stats["abgefragt"],
+            "quellen": {k: f"{v['ok']} ok / {v['fehler']} Fehler" + (f" ({v['letzter_fehler']})" if v["fehler"] else "")
+                        for k, v in STATS.items()},
+        }
+
+    def log_status(self):
+        log.info("Status: %s", json.dumps(self.summary(), ensure_ascii=False))
 
     # ------------------------------------------------------------ Tagesbericht
     def daily_report(self):

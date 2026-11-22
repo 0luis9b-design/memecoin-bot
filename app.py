@@ -211,7 +211,7 @@ def _hours():
 @app.get("/health")
 def health():
     last = engine.state.get("last_cycle")
-    return jsonify(ok=True, version=VERSION, last_cycle_age=round(time.time() - last) if last else None)
+    return jsonify(ok=True, version=VERSION, last_cycle_age=round(time.time() - last) if last else None, **engine.summary())
 
 
 @app.get("/")
