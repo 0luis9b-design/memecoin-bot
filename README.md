@@ -111,6 +111,26 @@ Beide starten mit 1.000 $ Spielgeld. Dazu kommen Testkonten mit abgewandelten Re
   - Die Auswertung zeigt Mediane statt Durchschnitte.
   - Der Backtest nutzt den Zeitraum, für den es vollständige Aufnahmen gibt.
 
+## Neu in v1.4
+
+- **Rug-Wächter**: Für offene Positionen lädt der Bot den RugCheck-Bericht alle 2,5 min neu. Er verkauft sofort, wenn
+  - der Ersteller die Hälfte seiner Coins abstößt,
+  - ein großer Holder (ab 3 %) die Hälfte verkauft,
+  - die Holder um mehr als 10 % fallen,
+  - die Liquidität entsperrt wird
+  - oder eine neue Gefahr-Warnung kommt.
+
+  Die Schatten-Auswertung zeigt in der Zeile „Rug-Wächter-Verkauf“, was danach mit dem Kurs passiert ist.
+- **Smart-Money-Bestätigung**: Neue Testkonten „Smart-Money bestätigt“ und „Rücksetzer + Smart-Money“ kaufen nur, wenn
+  eine beobachtete Smart Wallet den Coin in den letzten 6 h gekauft hat, und geben dafür Bonuspunkte.
+- **Sniper-Merkmal** (vorerst ohne Gewicht): Aus den gesammelten Start-Trades zählt der Bot, wie viele Wallets in den
+  ersten 10 s gekauft haben.
+- **Halber Einsatz auf der Bonding-Kurve**, weil Stops dort am weitesten durchrutschen.
+- Rug-Wächter und halber Einsatz auf der Kurve gelten für alle Testkonten. Das Hauptkonto bekommt sie nur nach
+  Freigabe über einen Lern-Vorschlag.
+- Den Rug-Wächter und die Smart-Money-Regel kann der Backtest nicht nachspielen; dafür fehlen alte RugCheck-Berichte und
+  eine unverfälschte Wallet-Liste.
+
 ## Railway
 
 | Variable | Zweck |

@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from . import config, market, notify, params, rules
 from .agents.regime import Regime
+from .agents.rugwatch import RugWatch
 from .backtest import Backtester
 from .agents import analysis
 from .agents.analysis import RugGuard
@@ -42,6 +43,7 @@ class Engine:
         self.launches = LaunchFeed(store)
         self.learner = Learner(store, self.trader, self.shadow)
         self.regime = Regime(store)
+        self.rugwatch = RugWatch(store, self.trader, self.shadow)
         self.backtester = Backtester(store, self.trader)
         self.due = {}
         self.skips = Counter()          # Gründe, warum Coins nicht gekauft wurden (für die Pipeline-Anzeige)
@@ -69,6 +71,14 @@ class Engine:
                          (acc["id"],))
                 self.s.decide("learning", "INFO", f"Testkonto {acc['name']} abgeschaltet (v1.3: Platz für neue Strategie-Familien)", acc["id"])
             self.s.kv_set("v13_aufgeraeumt", True)
+        if not self.s.kv_get("v14_schutz"):
+            # Rug-Wächter und kleinerer Einsatz auf der Kurve für alle laufenden Testkonten (Hauptkonto nur nach Freigabe)
+            for acc in self.s.q("SELECT id, params FROM accounts WHERE kind='test' AND active=1"):
+                p = json.loads(acc["params"])
+                p.update(params.SCHUTZ_V14)
+                self.s.x("UPDATE accounts SET params=? WHERE id=?", (json.dumps(p), acc["id"]))
+            self.s.kv_set("v14_schutz", True)
+            self.s.decide("learning", "INFO", "v1.4: alle Testkonten bekommen den Rug-Wächter und halben Einsatz auf der Bonding-Kurve")
         names = {r["name"] for r in self.s.q("SELECT name FROM accounts")}
         for strategy in ("scanner", "copy"):
             base = params.defaults(strategy)
@@ -115,6 +125,8 @@ class Engine:
             self.find_lost_pools()
         updated = self.scanner.refresh()
         self.trader.process(updated)
+        if self._due("rugwatch", 20):
+            self.rugwatch.check()
         if updated:
             self.shadow.update(updated)
             self.evaluate_scanner(updated)
@@ -171,6 +183,9 @@ class Engine:
         if status == "warten":
             return
         hist = self.scanner.history(mint, 30)
+        tok = self.s.one("SELECT created_at, first_seen FROM tokens WHERE mint=?", (mint,)) or {}
+        d["sniper"] = self.scout.sniper(mint, tok.get("created_at") or tok.get("first_seen"))
+        smart_n = self.scout.smart_holders(mint)
         comps = analysis.components(d, hist, rug)
         swing = rules.swing_pct([h["price"] for h in hist])
         self.analyst["bewertet"] += 1
@@ -180,6 +195,7 @@ class Engine:
             sc, parts = analysis.total(comps, p.get("weights"))   # jedes Konto rechnet mit seinen eigenen Gewichten
             if extra:
                 sc = extra["score_fn"](sc)
+            sc = min(100.0, sc + p.get("smart_bonus", 0) * smart_n)
             if a["kind"] == "main":
                 self.analyst["letzte"] = {"symbol": d["symbol"], "punkte": sc, "zeit": time.time()}
             checks = RugGuard.checks(rug, p)
@@ -202,6 +218,8 @@ class Engine:
                                   {"punkte": parts})
                     self.skips["Punktzahl"] += 1
                 continue
+            if smart_n < p.get("smart_min", 0):
+                continue
             if extra and not extra["account_ok"](a):
                 continue
             self.analyst["bestanden"] += 1
@@ -213,6 +231,7 @@ class Engine:
                    "data": {"strategie": strategy, "werte": {k: d.get(k) for k in ("price", "mcap", "liq", "reserve", "vol_m5", "vol_h1",
                                                                                       "buys_m5", "sells_m5", "ch_m5", "ch_h1", "age_min", "dex")},
                             "checks": checks, "punkte": parts, "marktlage": self.regime.heat, "schwankung": swing,
+                            "smart_wallets": smart_n, "sniper": d.get("sniper"),
                             **({"copy": extra["info"]} if extra else {})}}
             if self.trader.try_enter(a, sig, "analyst" if strategy == "scanner" else "copyfeed"):
                 self.shadow.record(strategy, mint, d["symbol"], "gekauft", reason, d, parts)
@@ -328,7 +347,7 @@ class Engine:
             "offen": len(self.trader.open_positions()), "rug_blockiert": self.rug.stats["blockiert"],
             "wallets_beobachtet": self.scout.stats["beobachtet"], "copy_abfragen": self.copy.stats["abgefragt"],
             "launch_feed": {k: self.launches.stats[k] for k in ("verbunden", "neue_coins", "pro_min", "aufgenommen", "migrationen", "fehler")},
-            "schatten": self.shadow.stats, "markt_hitze": self.regime.heat,
+            "schatten": self.shadow.stats, "markt_hitze": self.regime.heat, "rug_waechter": self.rugwatch.stats,
             "backtest": self.backtester.progress or ("läuft" if self.backtester.running else "bereit"),
             "rug_gruende": dict(self.block_reasons.most_common(6)), "ausschluss": dict(self.skips.most_common(6)),
             "quellen": {k: f"{v['ok']} ok / {v['fehler']} Fehler" + (f" ({v['letzter_fehler']})" if v["fehler"] else "")
@@ -369,6 +388,8 @@ class Engine:
                                                                 if self.launches.stats["verbunden"] else "nicht verbunden",
              "wert": self.launches.stats["neue_coins"], "einheit": "neue Pump.fun-Coins", "fehler": self.launches.stats["fehler"],
              "zuletzt": self.launches.stats["letzte_nachricht"]},
+            {"id": "rugwatch", "name": "Rug-Wächter", "zeile": self.rugwatch.stats["letzte_warnung"] or "bewacht offene Positionen",
+             "wert": self.rugwatch.stats["verkauft"], "einheit": f"Notverkäufe · {self.rugwatch.stats['geprueft']} Prüfungen"},
             {"id": "rugcheck", "name": "Rug-Check", "zeile": "harte Ausschlussregeln", "wert": self.rug.stats["blockiert"],
              "einheit": "blockiert", "fehler": self.rug.stats["fehler"]},
             {"id": "analyst", "name": "Analyst", "zeile": (f"zuletzt {self.analyst['letzte']['symbol']}: {self.analyst['letzte']['punkte']:.0f}"

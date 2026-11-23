@@ -20,7 +20,7 @@ RULE_PARAM = {
     "kaeufe": ("min_buys_m5", -1), "kaufdruck": ("min_buy_ratio", -1), "anstieg_klein": ("min_m5_change", -1),
     "anstieg_gross": ("max_m5_change", 1), "rug:top10": ("max_top10_pct", 1), "rug:holder": ("min_holders", -1),
     "rug:serie": ("max_creator_tokens", 1), "punktzahl": ("min_score", -1), "aufpreis": ("max_chase_pct", 1),
-    "anstieg_1h": ("min_h1_change", -1), "kurve": ("exclude_curve", -1),
+    "anstieg_1h": ("min_h1_change", -1), "kurve": ("exclude_curve", -1), "smart": ("smart_min", -1),
 }
 RULE_NAMES = {
     "zu_jung": "Pool zu jung", "zu_alt": "Pool zu alt", "liquiditaet": "Liquidität zu klein",
@@ -32,6 +32,7 @@ RULE_NAMES = {
     "rug:ersteller": "Ersteller hält zu viel", "rug:lp": "Liquidität nicht gesperrt", "rug:insider": "Insider-Netzwerk",
     "rug:serie": "Serien-Launcher", "aufpreis": "zu teuer gegenüber der Wallet", "rug:mehrere": "mehrere Rug-Regeln",
     "anstieg_1h": "Anstieg 1 h zu klein", "kurve": "noch auf der Bonding-Kurve",
+    "smart": "keine Smart Wallet im Coin", "rugwaechter": "Rug-Wächter-Verkauf (danach)",
 }
 CURVE_DEX = {"pumpfun", "pump-fun", "meteoradbc", "launchlab", "raydium-launchlab", "moonshot", "boop"}
 
@@ -165,7 +166,7 @@ def _lin(x, lo, hi):
 WEIGHTS = {"momentum": 20, "kaufdruck": 20, "beschleunigung": 15, "aktivitaet": 10, "liquiditaet": 10,
            "sicherheit": 15, "chart": 10,
            # Beobachtungs-Merkmale: zählen erst, wenn der Lern-Agent eine Wirkung findet und ihnen ein Gewicht gibt
-           "kein_boost": 0, "holder_wachstum": 0, "hat_socials": 0}
+           "kein_boost": 0, "holder_wachstum": 0, "hat_socials": 0, "kein_sniper": 0}
 
 
 def chart_score(hist, price):
@@ -213,6 +214,9 @@ def components(d, hist, rug):
     parts["kein_boost"] = (0.0 if boosts else 1.0, f"{boosts} DexScreener-Boosts" if boosts else "kein bezahlter Boost")
     g = (rug or {}).get("holder_growth_h")
     parts["holder_wachstum"] = (_lin(g, 0, 300), f"+{g:.0f} Holder/h") if g is not None else (0.5, "noch kein Verlauf")
+    sn = d.get("sniper")   # {"kaeufer": Wallets in den ersten 10 s, "usd": …} oder None, wenn der Start nicht erfasst ist
+    parts["kein_sniper"] = ((1 - _lin(sn["kaeufer"], 1, 8)), f"{sn['kaeufer']} Wallets kauften in den ersten 10 s") if sn \
+        else (0.5, "Start nicht erfasst")
     soc = int(d.get("socials") or 0)
     parts["hat_socials"] = (1.0 if soc else 0.0, f"{soc} Links (X, Telegram, Website)" if soc else "keine Social-Links")
     return parts

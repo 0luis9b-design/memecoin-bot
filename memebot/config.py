@@ -69,6 +69,9 @@ LAUNCH_MIN_VOL_M5 = _f("LAUNCH_MIN_VOL_M5", 1500)
 LAUNCH_MIN_BUYS_M5 = _i("LAUNCH_MIN_BUYS_M5", 20)
 LAUNCH_MIN_MCAP = _f("LAUNCH_MIN_MCAP", 12000)
 
+# --- Rug-Wächter ---
+RUGWATCH_SEC = _f("RUGWATCH_SEC", 150)          # so oft wird der RugCheck-Bericht offener Positionen neu geladen
+
 # --- Schatten-Auswertung ---
 SHADOW_H = _f("SHADOW_H", 2)                    # so lange werden abgelehnte Coins weiterverfolgt
 SHADOW_MIN_N = _i("SHADOW_MIN_N", 30)           # ab so vielen ausgewerteten Coins gibt es eine Einschätzung

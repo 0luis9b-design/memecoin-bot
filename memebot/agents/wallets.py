@@ -48,6 +48,21 @@ class Scout:
             n += 1
         return n
 
+    def sniper(self, mint, created_at):
+        """Wie viele Wallets haben in den ersten 10 s nach dem Start gekauft? None, wenn die Trades den Start nicht abdecken."""
+        if not created_at:
+            return None
+        rows = self.s.q("SELECT wallet, ts, usd FROM wallet_trades WHERE mint=? AND src='gt' AND kind='buy' ORDER BY ts LIMIT 400", (mint,))
+        if not rows or rows[0]["ts"] > created_at + 30:
+            return None
+        early = [r for r in rows if r["ts"] <= created_at + 10]
+        return {"kaeufer": len({r["wallet"] for r in early}), "usd": round(sum(r["usd"] or 0 for r in early), 2)}
+
+    def smart_holders(self, mint, hours=6):
+        """Wie viele beobachtete Smart Wallets haben diesen Coin in den letzten Stunden gekauft?"""
+        return self.s.val("""SELECT COUNT(DISTINCT t.wallet) FROM wallet_trades t JOIN wallets w ON w.address=t.wallet
+                             WHERE t.mint=? AND t.kind='buy' AND t.ts>? AND w.tracked=1""", (mint, time.time() - hours * 3600), 0)
+
     def score_wallets(self):
         """Ergebnis je Wallet und Coin -> Treffer/Fehlgriff -> Score. Die besten werden beobachtet."""
         now = time.time()

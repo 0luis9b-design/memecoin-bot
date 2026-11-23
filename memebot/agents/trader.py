@@ -57,10 +57,10 @@ class Trader:
         return acc["cash"] + sum((p["value"] or 0) if p["status"] == "open" else p["budget"] for p in pos)
 
     # ------------------------------------------------------------ Sizer + Order
-    def size(self, acc, score, reserve, heat=None):
+    def size(self, acc, score, reserve, heat=None, dex=None):
         p = acc["params"]
         eq = self.equity(acc)
-        pct = rules.size_pct(p, score) * (rules.regime_mult(p, heat) or 0)
+        pct = rules.size_pct(p, score) * (rules.regime_mult(p, heat) or 0) * rules.venue_mult(p, dex)
         usd = eq * pct / 100
         limit_impact = sim.max_usd_for_impact(p["max_impact_pct"], reserve)
         exposure = eq - acc["cash"]
@@ -84,7 +84,7 @@ class Trader:
         if rules.regime_mult(p, sig.get("heat")) is None:
             self._skip(agent, acc, sig, f"Markt zu kalt (Hitze {sig.get('heat'):.0f} < {p.get('regime_pause_heat')})")
             return None
-        usd, pct, limit_impact = self.size(acc, sig["score"], sig["reserve"], sig.get("heat"))
+        usd, pct, limit_impact = self.size(acc, sig["score"], sig["reserve"], sig.get("heat"), sig.get("dex"))
         if usd < 5:
             why = "Kasse/Marktanteil ausgeschöpft" if limit_impact >= 5 else "Pool zu klein für einen sinnvollen Einsatz"
             self._skip(agent, acc, sig, why)

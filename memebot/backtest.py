@@ -180,7 +180,7 @@ def run_variant(data, p, t_from, t_to, start=None):
         if mult is None:
             continue
         eq = cash + sum(open_.values())
-        usd = eq * rules.size_pct(p, sc) * mult / 100
+        usd = eq * rules.size_pct(p, sc) * mult * rules.venue_mult(p, d.get("dex")) / 100
         usd = min(usd, sim.max_usd_for_impact(p["max_impact_pct"], d["reserve"]), cash,
                   eq * p["max_exposure_pct"] / 100 - sum(open_.values()))
         if usd < 5:

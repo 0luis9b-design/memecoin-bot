@@ -47,6 +47,10 @@ LABELS = {
     "min_wallets": "Copy: mind. so viele Smart Wallets kaufen",
     "min_h1_change": "Mindest-Anstieg 1 h (%)",
     "exclude_curve": "Nur migrierte Coins, keine Bonding-Kurve (1 = an)",
+    "rug_watch": "Rug-Wächter: bei Rug-Vorzeichen sofort verkaufen (1 = an)",
+    "curve_size_mult": "Einsatz-Faktor auf der Bonding-Kurve",
+    "smart_min": "Mind. so viele Smart Wallets halten den Coin (0 = egal)",
+    "smart_bonus": "Bonus-Punkte je Smart Wallet im Coin",
 }
 
 SCANNER_DEFAULT = {
@@ -57,7 +61,10 @@ SCANNER_DEFAULT = {
     "min_m5_change": 3, "max_m5_change": 120, "max_top10_pct": 30, "min_holders": 50, "reentry_min": 60,
     "max_creator_tokens": 5, "time_stop_min": 0, "time_stop_gain_pct": 5, "flow_exit": 0, "flow_ratio": 1.3,
     "vol_stop": 0, "vol_mult": 0.6, "regime_cold_mult": 1.0, "regime_pause_heat": 0, "min_h1_change": -100, "exclude_curve": 0,
+    "rug_watch": 0, "curve_size_mult": 1.0, "smart_min": 0, "smart_bonus": 0,
 }
+# v1.4: Schutz-Bausteine, die alle Testkonten bekommen (Hauptkonto erst nach Freigabe)
+SCHUTZ_V14 = {"rug_watch": 1, "curve_size_mult": 0.5}
 
 # v1.3: Bausteine der neuen Strategie-Familien (nach 22 h Live-Daten: Hinterherrennen nach großen Anstiegen verliert)
 _RUECKSETZER = {"min_h1_change": 30, "min_m5_change": -20, "max_m5_change": 0, "min_buy_ratio": 0.8, "min_buys_m5": 10,
@@ -80,6 +87,8 @@ VARIANTS = {
         "Groß & alt": dict(_GROSS),
         "Migriert + Rücksetzer": dict(_RUECKSETZER, exclude_curve=1),
         "Groß + Rücksetzer": dict(_GROSS, **_RUECKSETZER),
+        "Smart-Money bestätigt": {"min_m5_change": 0, "max_m5_change": 25, "min_score": 40, "smart_min": 1, "smart_bonus": 10},
+        "Rücksetzer + Smart-Money": dict(_RUECKSETZER, smart_min=1, smart_bonus=10),
     },
     "copy": {
         "Streng": {"max_chase_pct": 8, "min_wallet_score": 0.55, "stop_pct": 12},
@@ -102,12 +111,19 @@ MUTABLE = {
     "time_stop_min": (0, 60, 5), "time_stop_gain_pct": (0, 30, 5), "flow_exit": (0, 1, 1), "flow_ratio": (1.1, 3.0, 0.1),
     "vol_stop": (0, 1, 1), "vol_mult": (0.3, 1.5, 0.1), "regime_cold_mult": (0.2, 1.0, 0.1),
     "min_h1_change": (-100, 200, 10), "exclude_curve": (0, 1, 1),
+    "curve_size_mult": (0.2, 1.0, 0.1), "smart_bonus": (0, 30, 5),
 }
 # Testkonten, die in v1.3 abgeschaltet werden: alles Abwandlungen von „nach großem Anstieg kaufen“ (22 h: −55 bis −74 %)
 RETIRED_V13 = ["Locker", "Schnell", "TikTok", "Zeit-Stop", "Kaufdruck-Ausstieg", "Schwankungs-Stop", "Marktlage"]
 # Diese Regeln verändert der Lern-Agent nur gezielt (nach der Schatten-Auswertung), nicht zufällig
 DIRECTED_ONLY = {"min_liq", "min_mcap", "max_mcap", "min_age_min", "max_age_h", "min_buys_m5", "min_m5_change",
                  "max_top10_pct", "min_holders", "max_creator_tokens"}
+
+
+for _strat in VARIANTS.values():
+    for _name, _changes in _strat.items():
+        for _k, _v in SCHUTZ_V14.items():
+            _changes.setdefault(_k, _v)
 
 
 def defaults(strategy):

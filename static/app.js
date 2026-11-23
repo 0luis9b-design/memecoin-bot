@@ -13,7 +13,7 @@ const dt = (ts) => (ts ? new Date(ts * 1000).toLocaleString("de-DE", { day: "2-d
 const ago = (ts) => { if (!ts) return "–"; const s = Date.now() / 1000 - ts; return s < 60 ? Math.round(s) + " s" : s < 3600 ? Math.round(s / 60) + " min" : (s / 3600).toFixed(1) + " h"; };
 const price = (p) => (!p ? "–" : p >= 1 ? p.toFixed(4) : p.toPrecision(4));
 const short = (a) => (a ? esc(a.slice(0, 4) + "…" + a.slice(-4)) : "");
-const AGENT_COLORS = { launchfeed: "#ff9f43", shadow: "#8695a3", scanner: "#4cc3ff", rugcheck: "#ff4d5e", analyst: "#a78bfa", sizer: "#f5c84c", executor: "#22d36b", risk: "#ff9f43", logger: "#e6edf3", scout: "#4cc3ff", copyfeed: "#22d36b", learning: "#f5c84c" };
+const AGENT_COLORS = { rugwatch: "#ff4d5e", launchfeed: "#ff9f43", shadow: "#8695a3", scanner: "#4cc3ff", rugcheck: "#ff4d5e", analyst: "#a78bfa", sizer: "#f5c84c", executor: "#22d36b", risk: "#ff9f43", logger: "#e6edf3", scout: "#4cc3ff", copyfeed: "#22d36b", learning: "#f5c84c" };
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { credentials: "same-origin", ...opts, headers: { "X-Requested-With": "memebot", "Content-Type": "application/json", ...(opts.headers || {}) } });

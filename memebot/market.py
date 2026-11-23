@@ -206,6 +206,8 @@ def parse_rugcheck(r, pools=()):
         "creator_tokens": len(r.get("creatorTokens") or []), "lp_locked_pct": min(lp_locked) if lp_locked else 100.0,
         "score_norm": f(r.get("score_normalised"), 0), "risks": risks,
         "launchpad": ((r.get("launchpad") or {}).get("name") or ""), "creator": r.get("creator") or "",
+        # die größten echten Holder (ohne Pools/Locker) – der Rug-Wächter vergleicht sie mit dem nächsten Bericht
+        "top_holders": [[h.get("owner") or h.get("address"), round(f(h.get("pct")), 2)] for h in holders[:10]],
     }
 
 

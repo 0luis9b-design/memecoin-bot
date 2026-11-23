@@ -21,6 +21,12 @@ def regime_mult(p, heat):
     return 1.0
 
 
+def venue_mult(p, dex):
+    """Auf der Bonding-Kurve rutschen Stops oft weit durch (live im Schnitt −28 % statt −15 %) -> dort kleiner einsetzen."""
+    from .agents.analysis import is_curve_dex
+    return p.get("curve_size_mult", 1.0) if is_curve_dex(dex) else 1.0
+
+
 def swing_pct(prices):
     """Schwankung der letzten 30 min: Spanne zwischen Hoch und Tief in % vom Mittel."""
     prices = [x for x in prices if x and x > 0]
