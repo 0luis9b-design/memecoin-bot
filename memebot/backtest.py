@@ -35,6 +35,10 @@ class Data:
     def __init__(self, store, hours):
         self.until = time.time()
         self.since = self.until - hours * 3600
+        # Nur der Zeitraum, für den es vollständige Aufnahmen gibt – sonst wäre der Train-Teil leer
+        first = store.val("SELECT MIN(ts) FROM snapshots WHERE ch_m5 IS NOT NULL AND ts>?", (self.since,))
+        if first:
+            self.since = max(self.since, first)
         mints = [r["mint"] for r in store.q(
             """SELECT DISTINCT mint FROM snapshots WHERE ts>? AND vol_m5>=500 AND buys_m5>=5 AND liq>=2000 AND ch_m5 IS NOT NULL""",
             (self.since,))]
@@ -87,7 +91,7 @@ class Data:
                 window = list(sr.price[k:i + 1])
                 comps = analysis.components(d, [{"price": x} for x in window], self.rug[mint])
                 comps = {k: (v, "") for k, (v, _) in comps.items()}          # Erklärtexte sparen Speicher
-                d = {k: d[k] for k in ("price", "liq", "reserve", "mcap", "vol_m5", "buys_m5", "sells_m5", "ch_m5", "age_min")}
+                d = {k: d[k] for k in ("price", "liq", "reserve", "mcap", "vol_m5", "buys_m5", "sells_m5", "ch_m5", "ch_h1", "age_min", "dex")}
                 out.append((ts, mint, i, d, comps, rules.swing_pct(window)))
         out.sort(key=lambda c: c[0])
         return out

@@ -20,6 +20,7 @@ RULE_PARAM = {
     "kaeufe": ("min_buys_m5", -1), "kaufdruck": ("min_buy_ratio", -1), "anstieg_klein": ("min_m5_change", -1),
     "anstieg_gross": ("max_m5_change", 1), "rug:top10": ("max_top10_pct", 1), "rug:holder": ("min_holders", -1),
     "rug:serie": ("max_creator_tokens", 1), "punktzahl": ("min_score", -1), "aufpreis": ("max_chase_pct", 1),
+    "anstieg_1h": ("min_h1_change", -1), "kurve": ("exclude_curve", -1),
 }
 RULE_NAMES = {
     "zu_jung": "Pool zu jung", "zu_alt": "Pool zu alt", "liquiditaet": "Liquidität zu klein",
@@ -30,7 +31,15 @@ RULE_NAMES = {
     "rug:rugged": "schon gerugged", "rug:top10": "Top 10 zu groß", "rug:holder": "zu wenige Holder",
     "rug:ersteller": "Ersteller hält zu viel", "rug:lp": "Liquidität nicht gesperrt", "rug:insider": "Insider-Netzwerk",
     "rug:serie": "Serien-Launcher", "aufpreis": "zu teuer gegenüber der Wallet", "rug:mehrere": "mehrere Rug-Regeln",
+    "anstieg_1h": "Anstieg 1 h zu klein", "kurve": "noch auf der Bonding-Kurve",
 }
+CURVE_DEX = {"pumpfun", "pump-fun", "meteoradbc", "launchlab", "raydium-launchlab", "moonshot", "boop"}
+
+
+def is_curve_dex(dex):
+    """Coin handelt noch auf einer Bonding-Kurve (Pump.fun, Meteora DBC, LaunchLab …), also vor der Migration."""
+    d = (dex or "").lower()
+    return d in CURVE_DEX or "dbc" in d or "launchlab" in d
 
 
 def rule_name(key):
@@ -43,6 +52,8 @@ def rule_name(key):
 def check_pre(d, p):
     """Lohnt sich ein genauerer Blick? -> (ja/nein, Regel-Schlüssel, Grund)"""
     liq = d["liq"] or d["reserve"] * 2
+    if p.get("exclude_curve") and is_curve_dex(d.get("dex")):
+        return False, "kurve", f"noch auf der Bonding-Kurve ({d.get('dex')})"
     if d["age_min"] < p["min_age_min"]:
         return False, "zu_jung", f"zu jung ({d['age_min']:.0f} min)"
     if d["age_min"] > p["max_age_h"] * 60:
@@ -64,6 +75,8 @@ def check_pre(d, p):
         return False, "anstieg_klein", f"Anstieg 5 min {d['ch_m5']:+.0f} % zu klein"
     if d["ch_m5"] > p["max_m5_change"]:
         return False, "anstieg_gross", f"schon +{d['ch_m5']:.0f} % in 5 min – nicht hinterherrennen"
+    if d.get("ch_h1", 0) < p.get("min_h1_change", -100):
+        return False, "anstieg_1h", f"Anstieg 1 h {d.get('ch_h1', 0):+.0f} % zu klein"
     return True, "", ""
 
 

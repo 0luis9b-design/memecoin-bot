@@ -57,6 +57,18 @@ class Engine:
     def ensure_variants(self):
         """Neue Startvarianten aus späteren Versionen in bestehenden Datenbanken nachträglich anlegen."""
         now = time.time()
+        if not self.s.kv_get("v13_aufgeraeumt"):
+            for vname in params.RETIRED_V13:
+                acc = self.s.one("SELECT * FROM accounts WHERE name=? AND active=1", (f"Scanner · {vname}",))
+                if not acc:
+                    continue
+                self.s.x("UPDATE accounts SET active=0, note=? WHERE id=?",
+                         ("abgeschaltet in v1.3: Abwandlung von „nach großem Anstieg kaufen“ – diese Idee hat live und im Backtest klar verloren",
+                          acc["id"]))
+                self.s.x("UPDATE positions SET status='cancelled', reason_out='Testkonto abgeschaltet' WHERE account_id=? AND status IN ('pending','open')",
+                         (acc["id"],))
+                self.s.decide("learning", "INFO", f"Testkonto {acc['name']} abgeschaltet (v1.3: Platz für neue Strategie-Familien)", acc["id"])
+            self.s.kv_set("v13_aufgeraeumt", True)
         names = {r["name"] for r in self.s.q("SELECT name FROM accounts")}
         for strategy in ("scanner", "copy"):
             base = params.defaults(strategy)

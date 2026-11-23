@@ -72,6 +72,8 @@ def test_regime_update(store):
 def test_cold_market_pauses_variant(store, monkeypatch):
     fm = FakeMarket(monkeypatch)
     e = Engine(store)
+    store.x("INSERT INTO accounts(name,strategy,kind,params,start_balance,cash,created) VALUES(?,?,?,?,?,?,?)",
+            ("Scanner · Marktlage", "scanner", "test", json.dumps(dict(P, regime_cold_mult=0.5, regime_pause_heat=15)), 1000, 1000, time.time()))
     e.regime.heat = 5
     fm.add(pair("POOLK", "MINTK", "COLD", 0.001))
     e.cycle()
@@ -84,10 +86,10 @@ def test_cold_market_pauses_variant(store, monkeypatch):
 def test_new_variants_added_to_old_database(store, monkeypatch):
     FakeMarket(monkeypatch)
     e = Engine(store)
-    e.s.x("DELETE FROM accounts WHERE name='Scanner · Zeit-Stop'")
+    e.s.x("DELETE FROM accounts WHERE name='Scanner · Rücksetzer'")
     Engine(store)
-    acc = store.one("SELECT * FROM accounts WHERE name='Scanner · Zeit-Stop'")
-    assert acc and json.loads(acc["params"])["time_stop_min"] == 10
+    acc = store.one("SELECT * FROM accounts WHERE name='Scanner · Rücksetzer'")
+    assert acc and json.loads(acc["params"])["min_h1_change"] == 30
     # alte Konten ohne neue Regeln bekommen Standardwerte
     store.x("UPDATE accounts SET params=? WHERE name='Scanner'", (json.dumps({k: v for k, v in P.items() if k != "flow_exit"}),))
     assert main_acc(e)["params"]["flow_exit"] == 0
@@ -179,3 +181,53 @@ def test_backtest_api(store):
     r = c.get("/api/shadow", headers=auth())
     assert len(r.json["uhrzeit"]) == 24
     assert isinstance(Backtester, type)
+
+
+def test_v13_families_and_cleanup(store, monkeypatch):
+    fm = FakeMarket(monkeypatch)
+    Engine(store)
+    # alte Datenbank: Verlierer-Variante existiert noch, Aufräumen ist noch nicht gelaufen
+    store.x("INSERT INTO accounts(name,strategy,kind,params,start_balance,cash,created,active) VALUES(?,?,?,?,?,?,?,1)",
+            ("Scanner · TikTok", "scanner", "test", json.dumps(P), 1000, 300, time.time()))
+    store.kv_set("v13_aufgeraeumt", False)
+    e = Engine(store)
+    assert store.one("SELECT active FROM accounts WHERE name='Scanner · TikTok'")["active"] == 0
+    names = {a["name"] for a in e.trader.accounts("scanner")}
+    assert {"Scanner · Rücksetzer", "Scanner · Nur migriert", "Scanner · Groß & alt", "Scanner · Kein Hinterherrennen"} <= names
+    # Kurven-Coin: nur das Konto „Nur migriert“ lässt ihn aus
+    d = pair("POOLC", "MINTC", "CURVE", 0.001, ch_m5=20)
+    d["dex"] = "pumpfun"
+    fm.add(d)
+    e.cycle()
+    accs = {a["name"]: a for a in e.trader.accounts("scanner")}
+    assert e.trader.open_positions(accs["Scanner"]["id"])
+    assert not e.trader.open_positions(accs["Scanner · Nur migriert"]["id"])
+    # Rücksetzer: steigt in 1 h, fällt gerade in 5 min
+    p = accs["Scanner · Rücksetzer"]["params"]
+    dd = dict(pair("X", "Y", "Z", 0.0001, ch_m5=-8, ch_h1=60, buys=40, sells=45), age_min=30)
+    assert analysis.check_pre(dd, p)[0]
+    assert not analysis.check_pre(dict(dd, ch_m5=15), p)[0]           # steigt gerade -> kein Rücksetzer
+    assert analysis.check_pre(dict(dd, ch_h1=10), p)[1] == "anstieg_1h"
+
+
+def test_price_glitch_is_ignored(store, monkeypatch):
+    fm = FakeMarket(monkeypatch)
+    e = Engine(store)
+    fm.add(pair("POOLG", "MINTG", "GLITCH", 0.001, vol_m5=100, buys=5))
+    e.cycle()
+    fm.p["POOLG"]["price"] = 0.5                                         # ×500 in Sekunden
+    e.cycle()
+    assert e.s.one("SELECT last_price FROM tokens WHERE mint='MINTG'")["last_price"] == pytest.approx(0.001)
+    assert e.scanner.stats["kurs_spruenge_ignoriert"] == 1
+    e.cycle(); e.cycle()                                                 # dritte Bestätigung -> wird geglaubt
+    assert e.s.one("SELECT last_price FROM tokens WHERE mint='MINTG'")["last_price"] == pytest.approx(0.5)
+    fm.p["POOLG"]["price"] = 0.0001                                      # Absturz wird nie gefiltert
+    e.cycle()
+    assert e.s.one("SELECT last_price FROM tokens WHERE mint='MINTG'")["last_price"] == pytest.approx(0.0001)
+
+
+def test_backtest_window_starts_with_data(store):
+    start = time.time() - 5 * 3600
+    _record(store, "WMINT", [0.001] * 50, start)
+    data = Data(store, 72)
+    assert abs(data.since - start) < 5                                  # nicht 72 h zurück, sondern ab den ersten Aufnahmen

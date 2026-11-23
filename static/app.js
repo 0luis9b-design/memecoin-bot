@@ -297,7 +297,7 @@ async function loadShadow() {
   const names = { scanner: "Scanner", copy: "Copy-Trading" };
   $("#shadowTables").innerHTML = Object.entries(S.report).map(([strat, r]) => `
     <h2 style="margin-top:14px">${esc(names[strat] || strat)}</h2>
-    <div class="tbl"><table><tr><th>Regel</th><th>Coins</th><th>läuft</th><th>Gewinner</th><th>Rugs</th><th>Verlierer</th><th>Ø bestes Plus</th><th>Ø Ende</th><th>Einschätzung</th></tr>
+    <div class="tbl"><table><tr><th>Regel</th><th>Coins</th><th>läuft</th><th>Gewinner</th><th>Rugs</th><th>Verlierer</th><th>Median bestes Plus</th><th>Median Ende</th><th>Einschätzung</th></tr>
     ${r.regeln.map((i) => `<tr style="${i.rule === "gekauft" ? "background:#0f1d16" : ""}"><td><b>${esc(i.name)}</b>${i.regel ? `<div class="small muted">${esc(i.regel)}</div>` : ""}</td>
       <td>${i.n}</td><td class="muted">${i.offen || 0}</td><td class="pos">${i.n ? i.gewinner_pct + " %" : "–"}</td><td class="neg">${i.n ? i.rug_pct + " %" : "–"}</td>
       <td>${i.n ? i.verlierer_pct + " %" : "–"}</td><td>${i.n ? pct(i.avg_bestes, 0) : "–"}</td><td class="${cls(i.avg_ende)}">${i.n ? pct(i.avg_ende, 0) : "–"}</td>

@@ -45,6 +45,8 @@ LABELS = {
     "regime_cold_mult": "Einsatz-Faktor bei kaltem Markt",
     "regime_pause_heat": "Pause unter Markt-Hitze (0 = nie)",
     "min_wallets": "Copy: mind. so viele Smart Wallets kaufen",
+    "min_h1_change": "Mindest-Anstieg 1 h (%)",
+    "exclude_curve": "Nur migrierte Coins, keine Bonding-Kurve (1 = an)",
 }
 
 SCANNER_DEFAULT = {
@@ -54,8 +56,13 @@ SCANNER_DEFAULT = {
     "min_age_min": 3, "max_age_h": 12, "min_vol_m5": 3000, "min_buys_m5": 20, "min_buy_ratio": 1.2,
     "min_m5_change": 3, "max_m5_change": 120, "max_top10_pct": 30, "min_holders": 50, "reentry_min": 60,
     "max_creator_tokens": 5, "time_stop_min": 0, "time_stop_gain_pct": 5, "flow_exit": 0, "flow_ratio": 1.3,
-    "vol_stop": 0, "vol_mult": 0.6, "regime_cold_mult": 1.0, "regime_pause_heat": 0,
+    "vol_stop": 0, "vol_mult": 0.6, "regime_cold_mult": 1.0, "regime_pause_heat": 0, "min_h1_change": -100, "exclude_curve": 0,
 }
+
+# v1.3: Bausteine der neuen Strategie-Familien (nach 22 h Live-Daten: Hinterherrennen nach großen Anstiegen verliert)
+_RUECKSETZER = {"min_h1_change": 30, "min_m5_change": -20, "max_m5_change": 0, "min_buy_ratio": 0.8, "min_buys_m5": 10,
+                "min_vol_m5": 1500, "min_score": 40}
+_GROSS = {"min_liq": 30000, "min_age_min": 60, "min_mcap": 100000, "max_m5_change": 40, "min_score": 45}
 
 COPY_DEFAULT = dict(SCANNER_DEFAULT, **{
     "min_score": 45, "min_vol_m5": 0, "min_buys_m5": 0, "min_buy_ratio": 0, "min_m5_change": -100,
@@ -67,13 +74,12 @@ COPY_DEFAULT = dict(SCANNER_DEFAULT, **{
 VARIANTS = {
     "scanner": {
         "Vorsichtig": {"min_score": 70, "stop_pct": 10, "trail_start_pct": 20, "trail_pct": 10, "max_positions": 4},
-        "Locker": {"min_score": 50, "stop_pct": 25, "trail_start_pct": 40, "trail_pct": 25, "max_hold_min": 240},
-        "Schnell": {"tp1_pct": 50, "tp1_sell_pct": 60, "max_hold_min": 45, "trail_start_pct": 15, "trail_pct": 10},
-        "TikTok": {"stop_pct": 6, "trail_start_pct": 12, "trail_pct": 8, "size_min_pct": 8, "size_max_pct": 8},
-        "Zeit-Stop": {"time_stop_min": 10, "time_stop_gain_pct": 5},
-        "Kaufdruck-Ausstieg": {"flow_exit": 1, "flow_ratio": 1.3},
-        "Schwankungs-Stop": {"vol_stop": 1, "vol_mult": 0.6},
-        "Marktlage": {"regime_cold_mult": 0.5, "regime_pause_heat": 15},
+        "Kein Hinterherrennen": {"min_m5_change": 0, "max_m5_change": 25, "min_score": 45},
+        "Rücksetzer": dict(_RUECKSETZER),
+        "Nur migriert": {"exclude_curve": 1, "max_m5_change": 40, "min_score": 45},
+        "Groß & alt": dict(_GROSS),
+        "Migriert + Rücksetzer": dict(_RUECKSETZER, exclude_curve=1),
+        "Groß + Rücksetzer": dict(_GROSS, **_RUECKSETZER),
     },
     "copy": {
         "Streng": {"max_chase_pct": 8, "min_wallet_score": 0.55, "stop_pct": 12},
@@ -95,7 +101,10 @@ MUTABLE = {
     "max_top10_pct": (15, 60, 5), "min_holders": (10, 400, 10), "max_creator_tokens": (1, 30, 1),
     "time_stop_min": (0, 60, 5), "time_stop_gain_pct": (0, 30, 5), "flow_exit": (0, 1, 1), "flow_ratio": (1.1, 3.0, 0.1),
     "vol_stop": (0, 1, 1), "vol_mult": (0.3, 1.5, 0.1), "regime_cold_mult": (0.2, 1.0, 0.1),
+    "min_h1_change": (-100, 200, 10), "exclude_curve": (0, 1, 1),
 }
+# Testkonten, die in v1.3 abgeschaltet werden: alles Abwandlungen von „nach großem Anstieg kaufen“ (22 h: −55 bis −74 %)
+RETIRED_V13 = ["Locker", "Schnell", "TikTok", "Zeit-Stop", "Kaufdruck-Ausstieg", "Schwankungs-Stop", "Marktlage"]
 # Diese Regeln verändert der Lern-Agent nur gezielt (nach der Schatten-Auswertung), nicht zufällig
 DIRECTED_ONLY = {"min_liq", "min_mcap", "max_mcap", "min_age_min", "max_age_h", "min_buys_m5", "min_m5_change",
                  "max_top10_pct", "min_holders", "max_creator_tokens"}

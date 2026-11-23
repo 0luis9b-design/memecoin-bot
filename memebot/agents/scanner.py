@@ -25,7 +25,9 @@ class Scanner:
 
     def __init__(self, store):
         self.s = store
-        self.stats = {"pools_gesehen": 0, "beobachtet": 0, "letzter_scan": None, "neu_letzter_scan": 0, "fehler": ""}
+        self.stats = {"pools_gesehen": 0, "beobachtet": 0, "letzter_scan": None, "neu_letzter_scan": 0, "fehler": "",
+                      "kurs_spruenge_ignoriert": 0}
+        self._glitch = {}
         self._page = 1
         self._trend_at = 0
         self._ds_at = 0
@@ -151,6 +153,16 @@ class Scanner:
                 # Pool fehlt in der Antwort: merken, seit wann (Rug-Verdacht bei offener Position)
                 self.s.x("UPDATE tokens SET missing_since=COALESCE(missing_since, ?), updated=? WHERE mint=?", (now, now, t["mint"]))
                 continue
+            # Unplausibler Kurssprung nach oben (z. B. ×10 in wenigen Minuten) ist fast immer ein Datenfehler der Quelle.
+            # Erst wenn derselbe Kurs dreimal hintereinander kommt, wird er übernommen. Abstürze werden NIE gefiltert (Rugs sind echt).
+            last = t["last_price"] or 0
+            if last > 0 and t["updated"] and now - t["updated"] < 600 and d["price"] > last * config.GLITCH_MULT:
+                n = self._glitch.get(t["mint"], 0) + 1
+                if n < 3:
+                    self._glitch[t["mint"]] = n
+                    self.stats["kurs_spruenge_ignoriert"] += 1
+                    continue
+            self._glitch.pop(t["mint"], None)
             hot = 1 if d["vol_m5"] >= config.HOT_VOL_M5 else 0
             age_min = (now - (t["created_at"] or t["first_seen"])) / 60
             status = t["status"]

@@ -14,6 +14,7 @@ also nicht immer durchgelassen. Die Zahlen sind ein Hinweis, kein Beweis.
 """
 import json
 import time
+from statistics import median
 
 from .. import config
 from .analysis import RULE_PARAM, rule_name
@@ -86,9 +87,18 @@ class Shadow:
     # ------------------------------------------------------------ Auswertung
     def report(self, days=7):
         since = time.time() - days * 86400
-        rows = self.s.q("""SELECT strategy, rule, COUNT(*) n, SUM(outcome='gewinner') win, SUM(outcome='rug') rug,
-                           SUM(outcome='verlierer') loss, AVG(max_gain) mg, AVG(final) fin
-                           FROM shadow WHERE done=1 AND outcome!='unbekannt' AND ts>? GROUP BY strategy, rule""", (since,))
+        raw = self.s.q("""SELECT strategy, rule, outcome, max_gain, final FROM shadow
+                          WHERE done=1 AND outcome!='unbekannt' AND ts>?""", (since,))
+        groups = {}
+        for r in raw:
+            g = groups.setdefault((r["strategy"], r["rule"]), {"n": 0, "win": 0, "rug": 0, "loss": 0, "mg": [], "fin": []})
+            g["n"] += 1
+            g["win"] += r["outcome"] == WIN
+            g["rug"] += r["outcome"] == RUG
+            g["loss"] += r["outcome"] == LOSS
+            g["mg"].append(r["max_gain"] or 0)
+            g["fin"].append(r["final"] or 0)
+        rows = [{"strategy": k[0], "rule": k[1], **v} for k, v in groups.items()]
         pending = {(r["strategy"], r["rule"]): r["n"] for r in self.s.q(
             "SELECT strategy, rule, COUNT(*) n FROM shadow WHERE done=0 GROUP BY strategy, rule")}
         out = {}
@@ -103,7 +113,8 @@ class Shadow:
                 items.append({
                     "rule": r["rule"], "name": rule_name(r["rule"]), "n": r["n"], "offen": pending.get((strat, r["rule"]), 0),
                     "gewinner_pct": round(wr, 1), "rug_pct": round(rr, 1), "verlierer_pct": round(r["loss"] / r["n"] * 100, 1),
-                    "avg_bestes": round(r["mg"] or 0, 1), "avg_ende": round(r["fin"] or 0, 1),
+                    # Median statt Durchschnitt: einzelne Ausreißer (Datenfehler, ×1000-Coins) verzerren sonst alles
+                    "avg_bestes": round(median(r["mg"]), 1), "avg_ende": round(median(r["fin"]), 1),
                     "einschaetzung": self._verdict(r["rule"], r["n"], wr, rr, bw, br),
                     "regel": RULE_PARAM.get(r["rule"], (None,))[0],
                 })

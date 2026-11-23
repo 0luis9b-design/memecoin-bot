@@ -90,6 +90,27 @@ Beide starten mit 1.000 $ Spielgeld. Dazu kommen Testkonten mit abgewandelten Re
 - **Neue Merkmale ohne Gewicht**: DexScreener-Boost und Holder-Wachstum. Der Lern-Agent schaltet sie ein, wenn sie
   Gewinner erkennen.
 
+## Neu in v1.3 (nach 22 h Live-Daten)
+
+**Befund:**
+- **Hinterherrennen verliert:** Nach großen 5-min-Anstiegen zu kaufen hat im Hauptkonto −55 % gebracht, bei 31 % Treffern und Profit-Faktor 0,59. Der Backtest kommt auf ähnliche Werte.
+- **Stops rutschen durch:** Sie greifen im Schnitt bei −28 % statt −15 %, weil die Kurse in Sekunden abstürzen.
+- **Viele Rugs:** 40 % der gekauften Coins waren innerhalb von 2 h Rugs.
+- **Die Punktzahl hilft nicht:** Sie unterscheidet Gewinner nicht von Verlierern.
+
+**Änderungen:**
+- **Neue Strategie-Familien als Testkonten:**
+  - Kein Hinterherrennen
+  - Rücksetzer: 1 h stark gestiegen, gerade 0 bis −20 % in 5 min
+  - Nur migriert: keine Bonding-Kurve
+  - Groß & alt: ab 30.000 $ Liquidität, mind. 1 h alt
+  - Kombinationen daraus
+- **Aufgeräumt:** Die 7 Verlierer-Varianten von „nach Anstieg kaufen“ sind abgeschaltet.
+- **Datenfehler behoben:**
+  - Unplausible Kurssprünge nach oben (über ×10) werden erst nach 3 Bestätigungen übernommen.
+  - Die Auswertung zeigt Mediane statt Durchschnitte.
+  - Der Backtest nutzt den Zeitraum, für den es vollständige Aufnahmen gibt.
+
 ## Railway
 
 | Variable | Zweck |
