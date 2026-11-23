@@ -231,3 +231,21 @@ def test_backtest_window_starts_with_data(store):
     _record(store, "WMINT", [0.001] * 50, start)
     data = Data(store, 72)
     assert abs(data.since - start) < 5                                  # nicht 72 h zurück, sondern ab den ersten Aufnahmen
+
+
+def test_socials_feature_and_losing_variant_gets_no_proposal(store, monkeypatch):
+    d = pair("P", "M", "S", 0.001)
+    d["age_min"] = 20
+    assert analysis.components(d, [], dict(GOOD_RUG))["hat_socials"][0] == 1.0
+    d["socials"] = 0
+    assert analysis.components(d, [], dict(GOOD_RUG))["hat_socials"][0] == 0.0
+    FakeMarket(monkeypatch)
+    e = Engine(store)
+    accs = e.trader.accounts("scanner")
+    main = [a for a in accs if a["kind"] == "main"][0]
+    var = [a for a in accs if a["kind"] == "test"][0]
+    from tests.test_learning_app import add_trades
+    add_trades(store, main["id"], 30, -10)          # Hauptkonto: −300 $
+    add_trades(store, var["id"], config.LEARN_MIN_TRADES, -3)   # Testkonto: −90 $ – weniger schlecht, aber im Minus
+    e.learner.run()
+    assert not store.q("SELECT * FROM proposals")

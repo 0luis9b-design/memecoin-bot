@@ -64,7 +64,9 @@ class Learner:
                 if c["trades"] < config.LEARN_MIN_TRADES:
                     continue
                 better = (c["vorsprung"] >= config.LEARN_MIN_EDGE_PCT and (c["pf_test"] or 0) > (c["pf_haupt"] or 0)
-                          and c["dd_test"] <= c["dd_haupt"] * 1.5 + 5)
+                          and c["dd_test"] <= c["dd_haupt"] * 1.5 + 5
+                          # „weniger Verlust als das Hauptkonto“ reicht nicht: das Testkonto muss selbst im Plus sein
+                          and c["rendite_test"] > 0 and (c["pf_test"] or 0) > 1)
                 if better and not self.s.one("SELECT id FROM proposals WHERE variant_id=? AND status='offen'", (v["id"],)):
                     changes = params.diff(main["params"], v["params"])
                     if changes:

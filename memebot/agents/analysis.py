@@ -165,7 +165,7 @@ def _lin(x, lo, hi):
 WEIGHTS = {"momentum": 20, "kaufdruck": 20, "beschleunigung": 15, "aktivitaet": 10, "liquiditaet": 10,
            "sicherheit": 15, "chart": 10,
            # Beobachtungs-Merkmale: zählen erst, wenn der Lern-Agent eine Wirkung findet und ihnen ein Gewicht gibt
-           "kein_boost": 0, "holder_wachstum": 0}
+           "kein_boost": 0, "holder_wachstum": 0, "hat_socials": 0}
 
 
 def chart_score(hist, price):
@@ -213,6 +213,8 @@ def components(d, hist, rug):
     parts["kein_boost"] = (0.0 if boosts else 1.0, f"{boosts} DexScreener-Boosts" if boosts else "kein bezahlter Boost")
     g = (rug or {}).get("holder_growth_h")
     parts["holder_wachstum"] = (_lin(g, 0, 300), f"+{g:.0f} Holder/h") if g is not None else (0.5, "noch kein Verlauf")
+    soc = int(d.get("socials") or 0)
+    parts["hat_socials"] = (1.0 if soc else 0.0, f"{soc} Links (X, Telegram, Website)" if soc else "keine Social-Links")
     return parts
 
 
