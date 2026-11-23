@@ -66,7 +66,10 @@ def auth(u="luis", p="geheim"):
 
 def test_login_required(client):
     assert client.get("/health").status_code == 200
-    assert client.get("/").status_code == 401
+    r = client.get("/")
+    assert r.status_code == 302 and r.headers["Location"].endswith("/login")
+    assert "WWW-Authenticate" not in r.headers
+    assert client.get("/api/overview").status_code == 401
     assert client.get("/api/overview", headers=auth("luis", "falsch")).status_code == 401
     r = client.get("/", headers=auth())
     assert r.status_code == 200 and b"MEMECOIN BOT" in r.data
@@ -86,3 +89,27 @@ def test_post_needs_dashboard_header(client):
     assert r.status_code == 403
     r = client.post("/api/proposal/999", headers={**auth(), "X-Requested-With": "memebot"}, json={"accept": True})
     assert r.status_code == 400
+
+
+def test_login_form_sets_session():
+    import app as appmod
+    c = appmod.app.test_client()
+    assert c.get("/login").status_code == 200
+    r = c.post("/login", data={"username": "luis", "password": "falsch"})
+    assert r.status_code == 401 and "falsch" in r.get_data(as_text=True)
+    r = c.post("/login", data={"username": "luis", "password": "geheim"})
+    assert r.status_code == 302 and "mb_session" in r.headers.get("Set-Cookie", "")
+    assert "HttpOnly" in r.headers["Set-Cookie"]
+    assert c.get("/api/overview").status_code == 200          # Cookie reicht
+    assert c.post("/api/proposal/1", json={"accept": True}).status_code == 403   # Schreiben nur mit Dashboard-Kopf
+    c.get("/logout")
+    assert c.get("/api/overview").status_code == 401
+
+
+def test_forged_or_expired_session_rejected():
+    import app as appmod
+    c = appmod.app.test_client()
+    c.set_cookie("mb_session", "9999999999.abc")
+    assert c.get("/api/overview").status_code == 401
+    c.set_cookie("mb_session", appmod._session_token(1000))     # abgelaufen
+    assert c.get("/api/overview").status_code == 401

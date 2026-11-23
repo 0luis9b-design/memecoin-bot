@@ -17,6 +17,7 @@ const AGENT_COLORS = { launchfeed: "#ff9f43", shadow: "#8695a3", scanner: "#4cc3
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { credentials: "same-origin", ...opts, headers: { "X-Requested-With": "memebot", "Content-Type": "application/json", ...(opts.headers || {}) } });
+  if (r.status === 401) { location.href = "/login"; throw new Error("Anmeldung nötig"); }
   if (!r.ok) throw new Error("HTTP " + r.status);
   return r.json();
 }

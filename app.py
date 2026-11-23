@@ -16,7 +16,9 @@ import threading
 import time
 from collections import defaultdict, deque
 
-from flask import Flask, Response, jsonify, render_template, request
+import hmac
+
+from flask import Flask, Response, jsonify, redirect, render_template, request
 
 from memebot import config, market, notify, params, sources
 from memebot.engine import Engine
@@ -28,7 +30,9 @@ log = logging.getLogger("memebot")
 app = Flask(__name__)
 
 # ---------------------------------------------------------------- Zugangsschutz (wie bei den anderen Bots)
-FREIE_PFADE = {"/health", "/favicon.ico"}
+FREIE_PFADE = {"/health", "/favicon.ico", "/login", "/static/app.css", "/static/icon.svg"}
+SESSION_COOKIE = "mb_session"
+SESSION_DAYS = 30
 
 
 def _abdruck(wert):
@@ -57,32 +61,105 @@ def _berechtigt(header):
     benutzer, trenner, passwort = klar.partition(":")
     if not trenner:
         return False
+    return _zugangsdaten_ok(benutzer, passwort)
+
+
+def _zugangsdaten_ok(benutzer, passwort):
     ok_u = secrets.compare_digest(_abdruck(benutzer), _USER_H)
     ok_p = secrets.compare_digest(_abdruck(passwort), _PASS_H)
     return ok_u & ok_p
+
+
+# Anmeldung per Formular -> signiertes Cookie (für Browser, die das Anmelde-Popup nicht zeigen, z. B. eingebettete).
+# Der Schlüssel hängt an Benutzer + Passwort: Wird das Passwort in Railway geändert, sind alle Anmeldungen ungültig.
+_SESSION_KEY = hashlib.sha256(("memebot-session|" + _USER + "|" + _PASS).encode("utf-8")).digest()
+
+
+def _session_token(expires):
+    sig = hmac.new(_SESSION_KEY, str(int(expires)).encode(), hashlib.sha256).hexdigest()
+    return f"{int(expires)}.{sig}"
+
+
+def _session_ok(token):
+    try:
+        exp, sig = (token or "").split(".", 1)
+        exp_i = int(exp)
+    except ValueError:
+        return False
+    return exp_i > time.time() and secrets.compare_digest(_session_token(exp_i), token)
+
+
+def _client_ip():
+    return (request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.remote_addr or "?")[:64]
+
+
+def _zu_viele_fehlversuche(ip):
+    now, fails = time.time(), _FAILS[ip]
+    while fails and now - fails[0] > 600:
+        fails.popleft()
+    if len(_FAILS) > 5000:
+        _FAILS.clear()
+    return len(fails) >= 10
 
 
 @app.before_request
 def _zugangsschutz():
     if request.path in FREIE_PFADE:
         return None
-    if AUTH_AKTIV:
-        ip = (request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.remote_addr or "?")[:64]
-        now, fails = time.time(), _FAILS[ip]
-        while fails and now - fails[0] > 600:
-            fails.popleft()
-        if len(fails) >= 10:
+    if AUTH_AKTIV and not _session_ok(request.cookies.get(SESSION_COOKIE)):
+        ip = _client_ip()
+        if _zu_viele_fehlversuche(ip):
             return Response("Zu viele Fehlversuche. Bitte in 10 Minuten erneut versuchen.", 429, mimetype="text/plain")
         if not _berechtigt(request.headers.get("Authorization", "")):
             if request.headers.get("Authorization"):
-                fails.append(now)
-            if len(_FAILS) > 5000:
-                _FAILS.clear()
-            return Response("Zugang nur mit Anmeldung.", 401, {"WWW-Authenticate": 'Basic realm="Memecoin-Bot", charset="UTF-8"'},
-                            mimetype="text/plain")
+                _FAILS[ip].append(time.time())
+            if request.path.startswith("/api/"):
+                return jsonify(error="Anmeldung nötig"), 401
+            return redirect("/login")
     if request.method not in ("GET", "HEAD", "OPTIONS") and request.headers.get("X-Requested-With") != "memebot":
         return jsonify(error="Aufruf nur aus dem Dashboard möglich"), 403
     return None
+
+
+LOGIN_HTML = """<!doctype html><html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Anmelden · Memecoin-Bot</title>
+<link rel="icon" href="/static/icon.svg"><link rel="stylesheet" href="/static/app.css"></head>
+<body><main style="max-width:380px;margin:12vh auto;padding:14px"><div class="card">
+<div class="brand" style="margin-bottom:14px"><div class="logo">🐸</div><div><div class="title">MEMECOIN BOT</div>
+<div class="sub">Spielgeld-Dashboard</div></div></div>
+<form method="post" action="/login" autocomplete="on">
+<label class="small muted" for="u">Benutzername</label><input id="u" name="username" autocomplete="username" required style="width:100%;margin:4px 0 10px">
+<label class="small muted" for="p">Passwort</label><input id="p" name="password" type="password" autocomplete="current-password" required style="width:100%;margin:4px 0 14px">
+<button class="act" type="submit" style="width:100%">Anmelden</button></form>
+<p class="small neg">__FEHLER__</p></div></main></body></html>"""
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not AUTH_AKTIV:
+        return redirect("/")
+    fehler = ""
+    if request.method == "POST":
+        ip = _client_ip()
+        if _zu_viele_fehlversuche(ip):
+            fehler = "Zu viele Fehlversuche. Bitte in 10 Minuten erneut versuchen."
+        elif _zugangsdaten_ok(request.form.get("username", ""), request.form.get("password", "")):
+            resp = redirect("/")
+            resp.set_cookie(SESSION_COOKIE, _session_token(time.time() + SESSION_DAYS * 86400), max_age=SESSION_DAYS * 86400,
+                            httponly=True, secure=request.is_secure or request.headers.get("X-Forwarded-Proto") == "https",
+                            samesite="Lax", path="/")
+            return resp
+        else:
+            _FAILS[ip].append(time.time())
+            fehler = "Benutzername oder Passwort falsch."
+    return Response(LOGIN_HTML.replace("__FEHLER__", fehler), 200 if not fehler else 401, mimetype="text/html")
+
+
+@app.get("/logout")
+def logout():
+    resp = redirect("/login")
+    resp.delete_cookie(SESSION_COOKIE, path="/")
+    return resp
 
 
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; "
