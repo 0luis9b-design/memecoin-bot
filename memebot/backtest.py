@@ -297,7 +297,9 @@ class Backtester:
                 r["besser_im_test"] = round(r["test"]["rendite"] - base["test"]["rendite"], 1)
                 r["robust"] = (r["train"]["trades"] >= config.BACKTEST_MIN_TRADES and r["test"]["trades"] >= max(3, config.BACKTEST_MIN_TRADES // 3)
                                and r["train"]["rendite"] > base["train"]["rendite"] and r["besser_im_test"] >= 5
-                               and (r["test"]["pf"] or 0) >= 1.0)
+                               and (r["test"]["pf"] or 0) >= 1.0
+                               # „weniger schlecht“ reicht nicht: in BEIDEN Zeiträumen muss echter Gewinn herauskommen
+                               and r["train"]["rendite"] > 0 and r["test"]["rendite"] > 0)
             ranked = [results[0]] + sorted(results[1:], key=lambda r: (r["robust"], r["train"]["rendite"]), reverse=True)
             summary = {"grund": reason, "stunden": round((data.until - data.since) / 3600, 1), "coins": len(data.series),
                        "kandidaten": len(data.candidates), "regelsaetze": len(results), "dauer_s": round(time.time() - t0, 1),

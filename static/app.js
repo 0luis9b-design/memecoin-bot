@@ -338,7 +338,7 @@ async function loadBacktest() {
   $("#btRun").disabled = B.running;
   $("#btInfo").innerHTML = `Spielt die gespeicherten Kurs-Aufnahmen der letzten ${B.hours} h mit vielen Regelsätzen erneut ab – mit denselben Regeln, Gebühren und Verzögerungen wie live.
     Ausgewählt wird auf den ersten 70 % der Zeit (<b>Train</b>), geprüft auf den letzten 30 % (<b>Test</b>). <b>Robust</b> = besser als das Hauptkonto in beiden Zeiträumen,
-    im Test mind. +5 %-Punkte und Profit-Faktor ≥ 1. Der beste robuste Regelsatz wird ein Testkonto „Scanner · Replay“ (höchstens eins alle 2 Tage); ins Hauptkonto kommt nichts ohne deine Freigabe.
+    im Test mind. +5 %-Punkte, Profit-Faktor ≥ 1 und in beiden Zeiträumen im Plus. Der beste robuste Regelsatz wird ein Testkonto „Scanner · Replay“ (höchstens eins alle 2 Tage); ins Hauptkonto kommt nichts ohne deine Freigabe.
     Läuft automatisch alle ${B.every_h} h. Grenzen: Rug-Check mit dem letzten bekannten Bericht, Ausstiege nur an den aufgenommenen Punkten, nur Scanner-Strategie.
     <br>Aufnahmen mit allen Werten: ${B.snapshots.toLocaleString("de-DE")} · ${B.running ? `<b>läuft: ${esc(B.progress)}</b>` : last ? `letzter Lauf ${dt(last.ts)} (${esc(last.status)})` : "noch kein Lauf"}`;
   const R = B.results;
