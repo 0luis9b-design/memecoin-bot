@@ -82,6 +82,9 @@ BACKTEST_HOURS = _f("BACKTEST_HOURS", 72)          # so viel Vergangenheit wird 
 BACKTEST_VARIANTS = _i("BACKTEST_VARIANTS", 120)   # so viele neue Regelsätze je Lauf
 BACKTEST_MIN_TRADES = _i("BACKTEST_MIN_TRADES", 15)
 BACKTEST_EVERY_H = _f("BACKTEST_EVERY_H", 12)
+BACKTEST_FOCUS = os.environ.get("BACKTEST_FOCUS", "ruecksetzer")   # "" = alle Konten als Ausgangspunkt
+BACKTEST_MAX_NEW = _i("BACKTEST_MAX_NEW", 3)      # so viele robuste Regelsätze werden je Lauf zu Testkonten
+BACKTEST_MAX_REPLAY = _i("BACKTEST_MAX_REPLAY", 5)
 
 # --- Quellen ---
 SOLANA_RPC_URL = os.environ.get("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com").strip()

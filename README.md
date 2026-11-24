@@ -131,6 +131,15 @@ Beide starten mit 1.000 $ Spielgeld. Dazu kommen Testkonten mit abgewandelten Re
 - Den Rug-Wächter und die Smart-Money-Regel kann der Backtest nicht nachspielen; dafür fehlen alte RugCheck-Berichte und
   eine unverfälschte Wallet-Liste.
 
+## Neu in v1.5 (24.11.2026)
+
+- **Neue Runde:** Das Hauptkonto Scanner hatte rund −80 % verloren, weil es nach Anstiegen gekauft hat. Es ist jetzt als
+  „Scanner · Runde 1 (archiviert)“ gespeichert. Das neue Hauptkonto startet mit 1.000 $ und den Regeln von
+  „Migriert + Rücksetzer“, inklusive Rug-Wächter.
+- **Abgeschaltet:** „Vorsichtig“ und „Gewichte G1“ (−70 und −66 %).
+- **Backtest mit Fokus:** Er wandelt nur noch die Rücksetzer-Familie ab. Bis zu 3 robuste Regelsätze je Lauf werden
+  Testkonten, höchstens 5 Replay-Konten laufen gleichzeitig. Wenn kein Platz frei ist, wird das schwächste ältere ersetzt.
+
 ## Railway
 
 | Variable | Zweck |

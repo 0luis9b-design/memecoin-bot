@@ -82,6 +82,9 @@ class Engine:
                          (json.dumps(p), "pausiert am 24.11.2026 nach fast −90 % – keine neuen Käufe, offene Positionen laufen aus", acc["id"]))
                 self.s.decide("system", "INFO", "Hauptkonto Scanner pausiert (Freigabe durch Luis)", acc["id"])
             self.s.kv_set("v141_haupt_pausiert", True)
+        if not self.s.kv_get("v15_neue_runde"):
+            self.new_round_v15()
+            self.s.kv_set("v15_neue_runde", True)
         if not self.s.kv_get("v14_schutz"):
             # Rug-Wächter und kleinerer Einsatz auf der Kurve für alle laufenden Testkonten (Hauptkonto nur nach Freigabe)
             for acc in self.s.q("SELECT id, params FROM accounts WHERE kind='test' AND active=1"):
@@ -116,6 +119,35 @@ class Engine:
                          (f"{NAMES[strategy]} · {vname}", strategy, "test", json.dumps(p), config.START_BALANCE,
                           config.START_BALANCE, now, "Startvariante: " + ", ".join(f"{params.LABELS.get(k, k)} {v}" for k, v in changes.items())))
         self.s.decide("system", "INFO", "Konten angelegt: je ein Hauptkonto für Scanner und Copy-Trading plus Testkonten")
+
+    def new_round_v15(self):
+        """Freigabe durch Luis am 24.11.2026: Verlierer abschalten, Hauptkonto Scanner mit „Migriert + Rücksetzer“ neu starten."""
+        old = self.s.one("SELECT * FROM accounts WHERE kind='main' AND strategy='scanner'")
+        if not old or not self.s.val("SELECT COUNT(*) FROM positions WHERE account_id=?", (old["id"],), 0):
+            return False   # neue/leere Datenbank: nichts zu tun
+        now = time.time()
+        for vname in ("Vorsichtig", "Gewichte G1"):
+            acc = self.s.one("SELECT id FROM accounts WHERE name=? AND active=1", (f"Scanner · {vname}",))
+            if acc:
+                self.s.x("UPDATE accounts SET active=0, note=? WHERE id=?",
+                         ("abgeschaltet in v1.5: „nach Anstieg kaufen“ verliert weiter (−66 bis −70 %)", acc["id"]))
+                self.s.x("UPDATE positions SET status='cancelled', reason_out='Testkonto abgeschaltet' WHERE account_id=? AND status IN ('pending','open')",
+                         (acc["id"],))
+        # altes Hauptkonto archivieren (Historie bleibt), offene Reste beenden
+        self.s.x("UPDATE accounts SET kind='archiv', active=0, name=?, note=? WHERE id=?",
+                 ("Scanner · Runde 1 (archiviert)", "Runde 1 bis 24.11.2026: nach Anstiegen kaufen – Ergebnis rund −80 %", old["id"]))
+        self.s.x("UPDATE positions SET status='cancelled', reason_out='Runde 1 beendet' WHERE account_id=? AND status IN ('pending','open')",
+                 (old["id"],))
+        src = self.s.one("SELECT params FROM accounts WHERE name='Scanner · Migriert + Rücksetzer' AND active=1")
+        p = json.loads(src["params"]) if src else dict(params.defaults("scanner"), **params.VARIANTS["scanner"]["Migriert + Rücksetzer"])
+        p.pop("paused", None)
+        self.s.x("""INSERT INTO accounts(name,strategy,kind,params,start_balance,cash,created,active,note,generation)
+                    VALUES(?,?,'main',?,?,?,?,1,?,0)""",
+                 ("Scanner", "scanner", json.dumps(p), config.START_BALANCE, config.START_BALANCE, now,
+                  "Runde 2 ab 24.11.2026: Regeln von „Migriert + Rücksetzer“ inkl. Rug-Wächter – ändern sich nur nach Freigabe"))
+        self.s.decide("system", "INFO", "Neue Runde: Hauptkonto Scanner startet mit 1.000 $ und den Regeln von „Migriert + Rücksetzer“; "
+                      "Vorsichtig und Gewichte G1 abgeschaltet (Freigabe durch Luis)")
+        return True
 
     def _due(self, key, every):
         now = time.time()

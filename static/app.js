@@ -277,7 +277,7 @@ async function loadLearning() {
     L.accounts.map((a) => {
       const m = mains[a.strategy];
       const diff = a.kind === "main" ? "Hauptkonto" : Object.entries(a.params).filter(([k, v]) => m && m.params[k] !== v).map(([k, v]) => `${L.labels[k] || k}: ${fmtVal(v)}`).join(" · ");
-      return `<tr style="${a.active ? "" : "opacity:.45"}"><td><b>${esc(a.name)}</b>${a.active ? "" : " <span class='tag'>abgeschaltet</span>"}${a.kind === "main" || a.generation || !a.active ? `<div class="small muted">${esc(a.note || "")}</div>` : ""}</td>
+      return `<tr style="${a.active ? "" : "opacity:.45"}"><td><b>${esc(a.name)}</b>${a.kind === "archiv" ? " <span class='tag'>archiviert</span>" : a.active ? "" : " <span class='tag'>abgeschaltet</span>"}${a.kind === "main" || a.generation || !a.active ? `<div class="small muted">${esc(a.note || "")}</div>` : ""}</td>
         <td>${usd(a.equity)}</td><td class="${cls(a.pnl_pct)}">${pct(a.pnl_pct)}</td><td>${a.trades}</td><td>${a.winrate ?? "–"} %</td><td>${a.profit_factor ?? "–"}</td><td>−${a.max_drawdown} %</td><td class="small muted">${esc(diff)}</td></tr>`;
     }).join("") + `</table></div>`;
 }

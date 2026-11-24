@@ -279,7 +279,11 @@ class Backtester:
             tries = 0
             while len(sets) < n + 1 + len(accs) - 1 and tries < n * 5:
                 tries += 1
-                base = self.rng.choice([main["params"]] + [a["params"] for a in accs if a["kind"] == "test"])
+                pool = [main["params"]] + [a["params"] for a in accs if a["kind"] == "test"]
+                if config.BACKTEST_FOCUS == "ruecksetzer":
+                    # nur Abwandlungen der Rücksetzer-Familie (die einzige Idee, die live und im Backtest nicht klar verliert)
+                    pool = [x for x in pool if x.get("min_h1_change", -100) >= 10 and x.get("max_m5_change", 999) <= 5] or pool
+                base = self.rng.choice(pool)
                 v = mutate_wide(base, self.rng)
                 key = json.dumps(v, sort_keys=True)
                 if key not in seen:
@@ -305,8 +309,9 @@ class Backtester:
                        "kandidaten": len(data.candidates), "regelsaetze": len(results), "dauer_s": round(time.time() - t0, 1),
                        "train_bis": split, "von": data.since, "bis": data.until,
                        "robust": sum(1 for r in results if r["robust"] and r["art"] == "neu")}
-            best = next((r for r in ranked[1:] if r["robust"] and r["art"] == "neu"), None)
-            summary["testkonto"] = self._start_account(best, main) if best else None
+            best = [r for r in ranked[1:] if r["robust"] and r["art"] == "neu"][:config.BACKTEST_MAX_NEW]
+            started = [n for n in (self._start_account(b, main) for b in best) if n]
+            summary["testkonto"] = ", ".join(started) or None
             self.s.x("INSERT INTO backtests(ts,status,summary,results) VALUES(?,?,?,?)",
                      (time.time(), "fertig", json.dumps(summary), json.dumps(ranked[:25], default=str)))
             self.s.decide("learning", "INFO", f"Replay-Backtest: {len(results)} Regelsätze über {summary['stunden']} h, "
@@ -314,12 +319,17 @@ class Backtester:
             return summary, ranked
 
     def _start_account(self, best, main):
-        """Bester robuster Regelsatz wird ein echtes Testkonto (höchstens eins alle 2 Tage, das ältere wird abgelöst)."""
+        """Robuster Regelsatz wird ein echtes Testkonto. Höchstens BACKTEST_MAX_REPLAY Replay-Konten gleichzeitig:
+        ist kein Platz frei, wird das schwächste ältere (mind. 1 Tag alt) abgelöst – sonst kommt kein neues dazu."""
         now = time.time()
         olds = [a for a in self.t.accounts("scanner") if a["name"].startswith("Scanner · Replay")]
-        if any(now - a["created"] < 2 * 86400 for a in olds):
+        if any(json.dumps(a["params"], sort_keys=True) == json.dumps(best["params"], sort_keys=True) for a in olds):
             return None
-        for a in olds:
+        if len(olds) >= config.BACKTEST_MAX_REPLAY:
+            ripe = [a for a in olds if now - a["created"] >= 86400]
+            if not ripe:
+                return None
+            a = min(ripe, key=lambda x: self.t.equity(x) / x["start_balance"])
             self.s.x("UPDATE accounts SET active=0, note=? WHERE id=?", ("abgelöst durch neueren Replay-Regelsatz", a["id"]))
             self.s.x("UPDATE positions SET status='cancelled', reason_out='Testkonto abgeschaltet' WHERE account_id=? AND status IN ('pending','open')",
                      (a["id"],))
