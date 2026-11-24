@@ -261,7 +261,9 @@ _auto_start()   # muss beim Import laufen, damit es auch unter Gunicorn startet
 # ---------------------------------------------------------------- Hilfen
 def _acc_view(a, with_params=False):
     st = engine.trader.account_stats(a)
+    pp = a["params"] if isinstance(a["params"], dict) else json.loads(a["params"])
     out = {"id": a["id"], "name": a["name"], "strategy": a["strategy"], "kind": a["kind"], "note": a.get("note"),
+           "paused": bool(pp.get("paused")),
            "created": a["created"], "active": a["active"], **st}
     if with_params:
         out["params"] = a["params"] if isinstance(a["params"], dict) else json.loads(a["params"])

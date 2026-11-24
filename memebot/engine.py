@@ -71,6 +71,17 @@ class Engine:
                          (acc["id"],))
                 self.s.decide("learning", "INFO", f"Testkonto {acc['name']} abgeschaltet (v1.3: Platz für neue Strategie-Familien)", acc["id"])
             self.s.kv_set("v13_aufgeraeumt", True)
+        if not self.s.kv_get("v141_haupt_pausiert"):
+            # Freigabe durch Luis am 24.11.2026: Hauptkonto Scanner nach fast −90 % stoppen (nur keine neuen Käufe)
+            acc = self.s.one("SELECT id, params FROM accounts WHERE kind='main' AND strategy='scanner'")
+            # nur die bestehende Live-Datenbank (Hauptkonto mit Trades), nicht neue/leere Datenbanken
+            if acc and self.s.val("SELECT COUNT(*) FROM positions WHERE account_id=?", (acc["id"],), 0):
+                p = json.loads(acc["params"])
+                p["paused"] = 1
+                self.s.x("UPDATE accounts SET params=?, note=? WHERE id=?",
+                         (json.dumps(p), "pausiert am 24.11.2026 nach fast −90 % – keine neuen Käufe, offene Positionen laufen aus", acc["id"]))
+                self.s.decide("system", "INFO", "Hauptkonto Scanner pausiert (Freigabe durch Luis)", acc["id"])
+            self.s.kv_set("v141_haupt_pausiert", True)
         if not self.s.kv_get("v14_schutz"):
             # Rug-Wächter und kleinerer Einsatz auf der Kurve für alle laufenden Testkonten (Hauptkonto nur nach Freigabe)
             for acc in self.s.q("SELECT id, params FROM accounts WHERE kind='test' AND active=1"):

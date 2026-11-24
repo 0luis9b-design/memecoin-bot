@@ -93,3 +93,19 @@ def test_curve_size_and_migration(store, monkeypatch):
     assert alt["rug_watch"] == 1 and alt["curve_size_mult"] == 0.5
     main = json.loads(store.one("SELECT params FROM accounts WHERE name='Scanner'")["params"])
     assert not main.get("rug_watch")
+
+
+def test_main_account_paused(store, monkeypatch):
+    fm = FakeMarket(monkeypatch)
+    e = Engine(store)
+    a = accs(e)
+    assert not a["Scanner"]["params"].get("paused")                  # neue Datenbank: nicht pausiert
+    store.x("INSERT INTO positions(account_id,mint,status,created,cost) VALUES(?,?,?,?,?)", (a["Scanner"]["id"], "OLD", "closed", 1, 1))
+    store.kv_set("v141_haupt_pausiert", False)
+    e = Engine(store)
+    fm.add(pair("POOLP", "MINTP", "PAUSE", 0.0001, ch_m5=10, ch_h1=40))
+    e.cycle()
+    a = accs(e)
+    assert a["Scanner"]["params"]["paused"] == 1
+    assert not e.trader.open_positions(a["Scanner"]["id"])
+    assert e.trader.open_positions(a["Scanner · Kein Hinterherrennen"]["id"])

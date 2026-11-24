@@ -71,7 +71,7 @@ async function loadOverview() {
 
   $("#accCards").innerHTML = o.accounts.filter((a) => a.kind === "main").map((a) => `
     <div class="card acc">
-      <div class="row between"><h2>${esc(a.name)}</h2><span class="small muted">Start ${usd(a.start, 0)}</span></div>
+      <div class="row between"><h2>${esc(a.name)}${a.paused ? ' <span class="tag CANCEL">pausiert</span>' : ""}</h2><span class="small muted">Start ${usd(a.start, 0)}</span></div>
       <div class="big ${a.pnl > 0 ? "pos" : ""}">${usd(a.equity)}</div>
       <div class="chg ${cls(a.pnl)}">${sgn(a.pnl)} (${pct(a.pnl_pct)}) <span class="mult ${a.multiple < 1 ? "neg" : ""}">${a.multiple.toFixed(2)}x</span></div>
       <div class="stats">

@@ -71,6 +71,8 @@ class Trader:
     def try_enter(self, acc, sig, agent):
         """sig: mint, pool, symbol, dex, score, price, reserve, reason, data"""
         p = acc["params"]
+        if p.get("paused"):
+            return None   # Konto pausiert: keine neuen Käufe, offene Positionen laufen normal aus
         pos = self.open_positions(acc["id"])
         if any(x["mint"] == sig["mint"] for x in pos):
             return None

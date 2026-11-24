@@ -51,6 +51,7 @@ LABELS = {
     "curve_size_mult": "Einsatz-Faktor auf der Bonding-Kurve",
     "smart_min": "Mind. so viele Smart Wallets halten den Coin (0 = egal)",
     "smart_bonus": "Bonus-Punkte je Smart Wallet im Coin",
+    "paused": "Pausiert: keine neuen Käufe (1 = an)",
 }
 
 SCANNER_DEFAULT = {
