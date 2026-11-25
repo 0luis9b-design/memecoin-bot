@@ -167,4 +167,5 @@ Alle Datenquellen sind kostenlos und brauchen keinen Schlüssel.
 - Gleiche Sperre im Backtest.
 - Bereits gebuchte Phantom-Trades werden einmalig als „ungültig“ markiert und aus Kontostand und Equity-Kurve herausgerechnet.
 - Logs gehen nach stdout (Railway zeigt sie nicht mehr als „error“).
+- Copy-Feed: Transaktionen im neuen Solana-Format (Version 1) werden einmal mit höherer Version nachgefragt statt verworfen.
 

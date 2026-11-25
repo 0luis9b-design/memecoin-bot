@@ -238,8 +238,16 @@ class CopyFeed:
                 try:
                     tx = rpc("getTransaction", [sg["signature"], {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}])
                 except SourceError as e:
-                    self.stats["fehler"] = str(e)
-                    continue
+                    if "-32015" not in str(e):
+                        self.stats["fehler"] = str(e)
+                        continue
+                    # neueres Transaktionsformat (v1): einmal mit höherer Version nachfragen, sonst überspringen
+                    try:
+                        tx = rpc("getTransaction", [sg["signature"], {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 1}])
+                        self.stats["tx_v1"] = self.stats.get("tx_v1", 0) + 1
+                    except SourceError:
+                        self.stats["tx_v1_unlesbar"] = self.stats.get("tx_v1_unlesbar", 0) + 1
+                        continue
                 ts = sg.get("blockTime") or now
                 for sw in parse_swaps(tx, w["address"]):
                     price_usd = sw["sol"] / sw["qty"] * market.sol_usd() if sw["qty"] else 0
