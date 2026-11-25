@@ -50,6 +50,8 @@ DEAD_LIQ = _f("DEAD_LIQ", 1500)                 # darunter gilt ein Coin als tot
 DEAD_AFTER_MIN = _f("DEAD_AFTER_MIN", 30)       # … aber erst ab diesem Alter
 QUIET_DEAD_MIN = _f("QUIET_DEAD_MIN", 60)       # ab diesem Alter fliegt ein Coin mit < 100 $ Volumen in 5 min raus
 HOT_VOL_M5 = _f("HOT_VOL_M5", 2000)             # ab so viel $ Volumen in 5 min wird ein Coin oft aktualisiert
+MAX_FILL_SLIP_PCT = _f("MAX_FILL_SLIP_PCT", 30)   # mehr Slippage lässt kein Swap-Programm zu -> Transaktion scheitert
+MAX_FILL_DROP_PCT = _f("MAX_FILL_DROP_PCT", 50)   # Kurs bis zur Ausführung um mehr als 50 % gefallen -> auf frischen Kurs warten
 GLITCH_MULT = _f("GLITCH_MULT", 10)            # Kurs springt zwischen zwei Abfragen um mehr als ×10 -> erst nach 3 Bestätigungen glauben
 SNAPSHOT_KEEP_H = _f("SNAPSHOT_KEEP_H", 96)       # 4 Tage Kurs-Aufnahmen – Grundlage des Replay-Backtests
 

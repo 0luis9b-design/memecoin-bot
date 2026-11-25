@@ -123,7 +123,7 @@ class Series:
 def _forward(p, sr, j, usd, stop):
     """Position ab Aufnahme j halten, bis eine Ausstiegsregel greift. -> (Ende-Zeit, Erlös, Grund)"""
     qty, eff, fee, imp = sim.buy(usd, sr.price[j], sr.reserve[j])
-    if qty <= 0:
+    if qty <= 0 or (eff / sr.price[j] - 1) * 100 > config.MAX_FILL_SLIP_PCT:
         return None
     st = {"market_entry": sr.price[j], "peak_price": sr.price[j], "opened_at": sr.ts[j], "tp1_done": 0,
           "entry_liq": sr.reserve[j], "stop_pct": stop, "flow_since": 0}

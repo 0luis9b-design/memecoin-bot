@@ -9,6 +9,7 @@ import binascii
 import hashlib
 import json
 import logging
+import sys
 import os
 import secrets
 import signal
@@ -25,7 +26,7 @@ from memebot.engine import Engine
 from memebot.store import Store
 from memebot.version import VERSION
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logging.basicConfig(level=logging.INFO, stream=sys.stdout, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("memebot")
 app = Flask(__name__)
 
@@ -349,7 +350,7 @@ def api_trades():
     if acc:
         sql += " AND p.account_id=?"
         args.append(acc)
-    if status in ("open", "closed", "cancelled", "pending"):
+    if status in ("open", "closed", "cancelled", "pending", "ungueltig"):
         sql += " AND p.status=?"
         args.append(status)
     rows = store.q(sql + " ORDER BY p.created DESC LIMIT 300", args)

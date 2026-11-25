@@ -160,3 +160,11 @@ python app.py
 ```
 
 Alle Datenquellen sind kostenlos und brauchen keinen Schlüssel.
+
+### v1.5.1 (25.11.2026)
+- **Fehler behoben: Phantom-Gewinne durch Kursfehler.** Fiel der Kurs zwischen Signal und Ausführung wegen eines Datenfehlers auf fast null, kaufte der Bot zum Fantasiekurs (Slippage 8.939 %) und buchte danach +1.364 % („Jensen“, +1.219 $ in jedem Scanner-Konto).
+- Neu: Kauf wird verworfen, wenn die Slippage über 30 % liegt (so ein Swap würde in echt scheitern). Fällt der Kurs vor der Ausführung um mehr als 50 %, wartet die Order auf einen frischen Kurs.
+- Gleiche Sperre im Backtest.
+- Bereits gebuchte Phantom-Trades werden einmalig als „ungültig“ markiert und aus Kontostand und Equity-Kurve herausgerechnet.
+- Logs gehen nach stdout (Railway zeigt sie nicht mehr als „error“).
+

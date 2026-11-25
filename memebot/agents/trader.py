@@ -138,10 +138,17 @@ class Trader:
         drift = (d["price"] / pos["market_entry"] - 1) * 100 if pos["market_entry"] else 0
         if drift > MAX_FILL_DRIFT_PCT:
             return self._cancel(pos, acc, f"Kurs bis zur Ausführung um {drift:.0f} % gestiegen – zu teuer")
+        if drift < -config.MAX_FILL_DROP_PCT:
+            # Absturz in wenigen Sekunden ist meist ein Datenfehler (oder ein Rug): nicht zum Fantasiekurs kaufen,
+            # auf den nächsten Kurs warten – bleibt er unten, verfällt die Order nach PENDING_TIMEOUT_SEC.
+            self.stats["kurs_abstuerze_abgewartet"] = self.stats.get("kurs_abstuerze_abgewartet", 0) + 1
+            return None
         qty, eff, fee, imp = sim.buy(pos["budget"], d["price"], d["reserve"])
         if qty <= 0:
             return self._cancel(pos, acc, "Ausführung nicht möglich")
         slip = (eff / d["price"] - 1) * 100
+        if slip > config.MAX_FILL_SLIP_PCT:
+            return self._cancel(pos, acc, f"Slippage {slip:.0f} % – der Swap wäre gescheitert")
         value, _, _ = sim.sell(qty, d["price"], d["reserve"])
         self.s.x("""UPDATE positions SET status='open', opened_at=?, qty=?, qty_left=?, entry_price=?, market_entry=?,
                     peak_price=?, last_price=?, value=?, entry_liq=? WHERE id=?""",

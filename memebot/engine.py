@@ -85,6 +85,9 @@ class Engine:
         if not self.s.kv_get("v15_neue_runde"):
             self.new_round_v15()
             self.s.kv_set("v15_neue_runde", True)
+        if not self.s.kv_get("v151_phantom"):
+            self.remove_phantom_trades()
+            self.s.kv_set("v151_phantom", True)
         if not self.s.kv_get("v14_schutz"):
             # Rug-Wächter und kleinerer Einsatz auf der Kurve für alle laufenden Testkonten (Hauptkonto nur nach Freigabe)
             for acc in self.s.q("SELECT id, params FROM accounts WHERE kind='test' AND active=1"):
@@ -148,6 +151,25 @@ class Engine:
         self.s.decide("system", "INFO", "Neue Runde: Hauptkonto Scanner startet mit 1.000 $ und den Regeln von „Migriert + Rücksetzer“; "
                       "Vorsichtig und Gewichte G1 abgeschaltet (Freigabe durch Luis)")
         return True
+
+    def remove_phantom_trades(self):
+        """v1.5.1: Käufe, die nur wegen eines Kursfehlers zustande kamen (Slippage weit über dem, was ein Swap zulässt),
+        als ungültig markieren und ihren Gewinn/Verlust aus Kontostand und Equity-Kurve herausrechnen."""
+        rows = self.s.q("""SELECT p.id, p.account_id, p.symbol, p.cost, p.proceeds, p.opened_at, p.closed_at, f.slip_pct
+                           FROM positions p JOIN fills f ON f.position_id=p.id AND f.side='buy'
+                           WHERE p.status='closed' AND f.slip_pct>?""", (config.MAX_FILL_SLIP_PCT,))
+        for r in rows:
+            pnl = (r["proceeds"] or 0) - (r["cost"] or 0)
+            self.s.x("UPDATE positions SET status='ungueltig', reason_out=? WHERE id=?",
+                     (f"ungültig (v1.5.1): Kauf nur durch Kursfehler möglich – Slippage {r['slip_pct']:.0f} %, "
+                      f"{pnl:+.2f} $ herausgerechnet", r["id"]))
+            self.s.x("UPDATE accounts SET cash=cash-? WHERE id=?", (pnl, r["account_id"]))
+            # Equity-Kurve: Werte während der Position verwerfen, danach um den Phantom-Betrag senken
+            self.s.x("DELETE FROM equity WHERE account_id=? AND ts>=? AND ts<?", (r["account_id"], r["opened_at"] or 0, r["closed_at"] or 0))
+            self.s.x("UPDATE equity SET equity=equity-? WHERE account_id=? AND ts>=?", (pnl, r["account_id"], r["closed_at"] or 0))
+            self.s.decide("system", "INFO", f"Phantom-Trade {r['symbol']} herausgerechnet ({pnl:+.2f} $, Slippage {r['slip_pct']:.0f} %)",
+                          r["account_id"])
+        return len(rows)
 
     def _due(self, key, every):
         now = time.time()
